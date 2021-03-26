@@ -35,8 +35,8 @@ from monai.transforms import (
     ToTensord,
 )
 from monai.utils import set_determinism
-
-
+#TODO: work on those 2 https://colab.research.google.com/github/PytorchLightning/pytorch-lightning/blob/master/notebooks/03-basic-gan.ipynb
+#TODO: https://github.com/Project-MONAI/tutorials/blob/master/modules/mednist_GAN_tutorial.ipynb
 class CrossModGan(pl.LightningModule):
     def __init__(self, lr=0.001):
         super().__init__()
