@@ -7,6 +7,9 @@ from pathlib import Path
 import re
 import json
 
+########################################################
+###     LOOK INTO T1w_data_split.py for comments     ###
+########################################################
 
 def extract_sub(s: str):
     """function to extract the subject code from the path"""
