@@ -58,7 +58,7 @@ def subject_to_json(subject_path, args):
             [str(path) for path in session.glob(args.t1w_glob)]
         )
         subject_json[session.name]["t2w"] = sorted(
-            [str(path) for path in session.glob(args.t1w_glob)]
+            [str(path) for path in session.glob(args.t2w_glob)]
         )
         subject_json[session.name]["meta"] = extract_metadata(session)
 
