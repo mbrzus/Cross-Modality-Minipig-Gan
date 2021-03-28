@@ -85,9 +85,14 @@ def generate_json(argv):
             main_dict["test"][subject.name] = subject_to_json(subject, argv)
 
     strfmt_splits = [str(a).replace(".", "") for a in argv.splits]
+    # out_file = (
+    #     Path(argv.out_dir)
+    #     / f"{Path(argv.image_dir).name}_TR{strfmt_splits[0]}_VAL{strfmt_splits[1]}_TE{strfmt_splits[2]}_{TIMESTAMP}.json"
+    # )
+
     out_file = (
         Path(argv.out_dir)
-        / f"{Path(argv.image_dir).name}_TR{strfmt_splits[0]}_VAL{strfmt_splits[1]}_TE{strfmt_splits[2]}_{TIMESTAMP}.json"
+        / f"structure.json"
     )
 
     with open(out_file, "w") as f:
