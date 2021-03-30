@@ -38,6 +38,7 @@ from monai.transforms import (
     SpatialPadd,
     ToTensord,
     ScaleIntensityRangePercentilesd,
+    Resized,
 )
 from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
@@ -93,7 +94,10 @@ class CasNetGenerator(nn.Module):
         self.img_shape = img_shape
 
         def unet_block(
-            in_channels, out_channels, channels=(16, 32, 64, 128), strides=(2, 2, 2)
+            in_channels,
+            out_channels,
+            channels=(16, 32, 64, 128, 256),
+            strides=(2, 2, 2, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -195,10 +199,7 @@ class GAN(pl.LightningModule):
             self.log(
                 "g_loss",
                 g_loss,
-                on_step=True,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
+                on_step=True
             )
             return g_loss
 
@@ -226,10 +227,7 @@ class GAN(pl.LightningModule):
             self.log(
                 "d_loss",
                 d_loss,
-                on_step=True,
-                on_epoch=True,
-                prog_bar=True,
-                logger=True,
+                on_step=True
             )
             return d_loss
 
@@ -308,9 +306,10 @@ class HumanBrainDataModule(pl.LightningDataModule):
         test_files = structure_to_monai_dict(test_structure)
 
         # get just a very small portion of the data for initial test (fail fast)
-        train_files = train_files[:15]
-        val_files = val_files[:5]
-        test_files = test_files[:5]
+        # TODO: look at splitting these for different training phases
+        # train_files = train_files[:15]
+        # val_files = val_files[:5]
+        # test_files = test_files[:5]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -320,7 +319,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
                     keys=["t1w", "t2w"],
                     lower=1.0,
                     upper=99.0,
-                    b_min=0.0,
+                    b_min=-1.0,
                     b_max=1.0,
                     clip=True,
                     relative=False,
@@ -330,30 +329,29 @@ class HumanBrainDataModule(pl.LightningDataModule):
                 # Orientationd(keys=["t1w", "t2w"], axcodes="RAS"),
                 # we probably want to pad images to the same size (i didn't check the data so this probably will need an update)
                 # NOTE: should we consider using a resize rather than a crop/pad?
-                ResizeWithPadOrCropd(
-                    keys=["t1w", "t2w"], spatial_size=self.spatial_size
-                ),
+                Resized(keys=["t1w", "t2w"], spatial_size=self.spatial_size),
                 ToTensord(keys=["t1w", "t2w"]),
             ]
         )
 
         # we use cached datasets - these are 10x faster than regular datasets
+        # TODO: adjust cache rate to fix memory problems
         self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            cache_rate=1.0,
+            cache_num=50,
             num_workers=4,
         )
         self.val_dataset = CacheDataset(
             data=val_files,
             transform=transforms,
-            cache_rate=1.0,
+            cache_num=10,
             num_workers=4,
         )
         self.test_dataset = CacheDataset(
             data=test_files,
             transform=transforms,
-            cache_rate=1.0,
+            cache_num=10,
             num_workers=4,
         )
 
@@ -399,7 +397,7 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[2],
+        gpus=[1],
         max_epochs=5,
         logger=tb_logger,
         checkpoint_callback=checkpoint_callback,
