@@ -25,6 +25,7 @@ from monai.losses import DiceLoss
 from monai.metrics import compute_hausdorff_distance, compute_meandice
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet
+from monai.networks.nets import Discriminator as MONAIDiscriminator
 from monai.transforms import (
     AddChanneld,
     Compose,
@@ -42,6 +43,7 @@ from monai.transforms import (
 )
 from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
+from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 
 # TODO: Alex, I commented the data module and the main function. The HumanData... module should be done. The main function
 # probably will need adjustment to the data visualization (last loop at the very end) but the logger trainer and all of that should be ready
@@ -96,8 +98,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(16, 32, 64, 128, 256),
-            strides=(2, 2, 2, 2),
+            channels=(16, 32, 64, 128),
+            strides=(2, 2, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -120,23 +122,25 @@ class CasNetGenerator(nn.Module):
 
 # TODO: look at using Markovian discriminator (PatchGAN) from: https://arxiv.org/pdf/1611.07004.pdf
 # TODO: improve discriminator by adding convolutional layers
+
+# NOTE: temporarily switching to monai discriminator to try and get prelim results
 class Discriminator(nn.Module):
     def __init__(self, img_shape):
         super().__init__()
 
-        self.model = nn.Sequential(
-            nn.Linear(int(np.prod(img_shape)), 256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(256, 128),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(128, 1),
-            nn.Sigmoid(),
+        self.model = MONAIDiscriminator(
+            img_shape,
+            channels=(8, 16, 32, 64, 128, 256, 1),
+            strides=(2, 2, 2, 2, 2, 2, 2, 1),
+            num_res_units=2,
+            kernel_size=3,
+            act="PRELU",
+            norm=None,
+            last_act="SIGMOID",
         )
 
     def forward(self, img):
-        img_flat = img.view(img.size(0), -1)
-        validity = self.model(img_flat)
-
+        validity = self.model(img)
         return validity
 
 
@@ -154,10 +158,11 @@ class GAN(pl.LightningModule):
         b2: float = 0.999,
         batch_size: int = 64,
         example_data: torch.Tensor = None,
+        one_sided_label_value: int = 0.9,
         **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters("latent_dim", "lr", "b1", "b2", "batch_size")
+        self.save_hyperparameters("latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value")
 
         # networks
         data_shape = (channels, width, height, depth)
@@ -180,27 +185,15 @@ class GAN(pl.LightningModule):
             # generate images
             self.generated_imgs = self(t1w_images)
 
-            # log sampled images
-            # TODO: find a nice way to log the generated 3d images to tboard
-
-            # sample_imgs = self.generated_imgs[:6]
-            # grid = torchvision.utils.make_grid(sample_imgs)
-            # self.logger.experiment.add_image("generated_images", grid, 0)
-
             # ground truth result (ie: all fake)
             # put on GPU because we created this tensor inside training_loop
 
-            # TODO: add one sided label smoothing here
             valid = torch.ones(t1w_images.shape[0], 1)
             valid = valid.type_as(t1w_images)
 
             # adversarial loss is binary cross-entropy
             g_loss = self.adversarial_loss(self.discriminator(self(t1w_images)), valid)
-            self.log(
-                "g_loss",
-                g_loss,
-                on_step=True
-            )
+            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             return g_loss
 
         # train discriminator
@@ -208,8 +201,7 @@ class GAN(pl.LightningModule):
             # Measure discriminator's ability to classify real from generated samples
 
             # how well can it label as real?
-            # TODO: addd one sided label smoothing here
-            valid = torch.ones(t1w_images.shape[0], 1)
+            valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
             valid = valid.type_as(t1w_images)
 
             real_loss = self.adversarial_loss(self.discriminator(t2w_images), valid)
@@ -224,11 +216,7 @@ class GAN(pl.LightningModule):
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
-            self.log(
-                "d_loss",
-                d_loss,
-                on_step=True
-            )
+            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             return d_loss
 
     def configure_optimizers(self):
@@ -241,16 +229,8 @@ class GAN(pl.LightningModule):
         return [opt_g, opt_d], []
 
     def on_epoch_end(self):
-        # TODO: find a nice way to log the generated 3d images to tboard
-
-        # example_input = self.example_input_array.type_as(self.generator.model[0].weight)
-
-        # # log sampled images
-        # sample_imgs = self(example_input)
-        # grid = torchvision.utils.make_grid(sample_imgs)
-        # self.logger.experiment.add_image("generated_images", grid, self.current_epoch)
-        pass
-
+        # log sampled images -- just logs from the last batch run
+        plot_2d_or_3d_image(self.generated_imgs, self.current_epoch, self.logger.experiment, tag='generated_t2w')
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
 class HumanBrainDataModule(pl.LightningDataModule):
@@ -307,7 +287,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
-        # train_files = train_files[:15]
+        # train_files = train_files[:50]
         # val_files = val_files[:5]
         # test_files = test_files[:5]
 
@@ -339,8 +319,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
         self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            cache_num=50,
-            num_workers=4,
+            cache_num=200,
+            num_workers=10,
         )
         self.val_dataset = CacheDataset(
             data=val_files,
@@ -379,15 +359,24 @@ if __name__ == "__main__":
     root_dir = str(Path(".").absolute().parent)  # use relative path
 
     # set up loggers and checkpoints
-    log_dir = os.path.join(root_dir, "GAN/logs")
+    log_dir = os.path.join(root_dir, "GAN/casnet-gen_monai-disc")
     tb_logger = pl.loggers.TensorBoardLogger(save_dir=log_dir)
     # TODO: find a good metric for determining the best model to checkpoint (naive using g_loss for now)
-    checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+    generator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
-        filename="{epoch}-{g_loss:.2f}-{d_loss:.2f}",
+        filename="gen_{epoch}-{g_loss:.2f}-{d_loss:.2f}",
         save_top_k=1,
         verbose=True,
-        monitor="g_loss",
+        monitor="g_loss_step",
+        mode="min",
+    )
+
+    discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+        dirpath=log_dir,
+        filename="dis_{epoch}-{g_loss:.2f}-{d_loss:.2f}",
+        save_top_k=1,
+        verbose=True,
+        monitor="d_loss_step",
         mode="min",
     )
 
@@ -397,10 +386,10 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[1],
-        max_epochs=5,
+        gpus=[0],
+        max_epochs=100,
         logger=tb_logger,
-        checkpoint_callback=checkpoint_callback,
+        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback]
         # precision=16
         # amp_backend='apex',
         # amp_level='O3'
