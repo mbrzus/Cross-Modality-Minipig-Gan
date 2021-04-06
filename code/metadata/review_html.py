@@ -1,9 +1,9 @@
 from pathlib import Path
 import json
 
-t1w_path = "/home/mbrzus/programming/Cross-Modality-Minipig-Gan/code/metadata/minipig_snapshots/t1w"
-t2w_path = "/home/mbrzus/programming/Cross-Modality-Minipig-Gan/code/metadata/minipig_snapshots/t2w"
-out_path = "/home/mbrzus/programming/Cross-Modality-Minipig-Gan/code/metadata/minipig_snapshots/"
+t1w_path = "/Shared/sinapse/mbrzus/minipig_snapshots/t1w/"
+t2w_path = "/Shared/sinapse/mbrzus/minipig_snapshots/t2w/"
+out_path = "/home/mbrzus/programming/Cross-Modality-Minipig-Gan/code/metadata/"
 
 with open(f"{out_path}/review_minipig.html", 'w') as f:
     f.write("<!DOCTYPE html>")
