@@ -90,7 +90,7 @@ from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6
+        self, img_shape, n_unet_blocks=3
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -123,41 +123,51 @@ class CasNetGenerator(nn.Module):
 # TODO: look at using Markovian discriminator (PatchGAN) from: https://arxiv.org/pdf/1611.07004.pdf
 # TODO: improve discriminator by adding convolutional layers
 
+# NOTE: temporarily switching to monai discriminator to try and get prelim results
 class Discriminator(nn.Module):
     def __init__(self, img_shape):
         super().__init__()
 
-        self.model_conv = nn.Sequential(
-            # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
-            nn.BatchNorm3d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
-            nn.BatchNorm3d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
-            nn.BatchNorm3d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
-            nn.BatchNorm3d(512),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        
-        self.model_linear = nn.Sequential(
-            # Sigmoid 
-            nn.Flatten(),
-            nn.Linear(512*6*6*6, 1024),
-            nn.Linear(1024, 128),
-            nn.Linear(128, 1),
-            nn.Sigmoid()
+        self.model = MONAIDiscriminator(
+            img_shape,
+            channels=(8, 16, 32, 64, 128, 256, 1),
+            strides=(2, 2, 2, 2, 2, 2, 2, 1),
+            num_res_units=2,
+            kernel_size=3,
+            act="PRELU",
+            norm=None,
+            last_act="SIGMOID",
         )
 
+        # self.model_conv = nn.Sequential(
+        #     # Block 1
+        #     nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), bias=False),
+        #     nn.BatchNorm3d(64),
+        #     nn.LeakyReLU(0.2, inplace=True),
+        #     # Block 2
+        #     nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), bias=False),
+        #     nn.BatchNorm3d(128),
+        #     nn.LeakyReLU(0.2, inplace=True),
+        #     # Block 3
+        #     nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), bias=False),
+        #     nn.BatchNorm3d(256),
+        #     nn.LeakyReLU(0.2, inplace=True),
+        #     # Block 4
+        #     nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), bias=False),
+        #     nn.BatchNorm3d(512),
+        #     nn.LeakyReLU(0.2, inplace=True)
+        # )
+        
+
+        # self.model_linear = nn.Sequential(
+        #     # Sigmoid 
+        #     nn.F.Flatten(),
+        #     nn.F.Linear(),
+        #     nn.Sigmoid()
+        # )
+
     def forward(self, img):
-        out = self.model_conv(img)
-        validity = self.model_linear(out)
+        validity = self.model(img)
         return validity
 
 
@@ -187,6 +197,7 @@ class GAN(pl.LightningModule):
         self.discriminator = Discriminator(img_shape=data_shape)
 
         self.example_input_array = example_data["t1w"]
+        self.generated_imgs = None
 
     def forward(self, x):
         return self.generator(x)
@@ -213,11 +224,11 @@ class GAN(pl.LightningModule):
 
             # adversarial loss is binary cross-entropy
             g_adv_loss = self.adversarial_loss(self.discriminator(generated_imgs), valid)
-            self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             g_recon_loss = self.reconstruction_loss(generated_imgs, t2w_images)
-            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             g_loss = g_adv_loss + g_recon_loss
-            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             
             return g_loss
 
@@ -241,7 +252,7 @@ class GAN(pl.LightningModule):
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
-            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
             return d_loss
 
     def configure_optimizers(self):
@@ -254,9 +265,8 @@ class GAN(pl.LightningModule):
         return [opt_g, opt_d], []
 
     def on_epoch_end(self):
-        input_data = self.example_input_array.type_as(self.discriminator.model_conv[0].weight)
         # log sampled images -- just logs from the last batch run
-        plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
+        plot_2d_or_3d_image(self.generated_imgs, self.current_epoch, self.logger.experiment, tag='generated_t2w')
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
 class HumanBrainDataModule(pl.LightningDataModule):
@@ -347,8 +357,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
         self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            cache_num=2000,
-            num_workers=16,
+            cache_num=200,
+            num_workers=10,
         )
         self.val_dataset = CacheDataset(
             data=val_files,
@@ -365,7 +375,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=20, shuffle=True, num_workers=4
+            self.train_dataset, batch_size=5, shuffle=True, num_workers=4
         )
         return train_loader
 
@@ -387,7 +397,7 @@ if __name__ == "__main__":
     root_dir = str(Path(".").absolute().parent)  # use relative path
 
     # set up loggers and checkpoints
-    log_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
+    log_dir = os.path.join(root_dir, "GAN/casnet-gen_monai-disc")
     tb_logger = pl.loggers.TensorBoardLogger(save_dir=log_dir)
     # TODO: find a good metric for determining the best model to checkpoint (naive using g_loss for now)
     generator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
@@ -412,13 +422,13 @@ if __name__ == "__main__":
     data.prepare_data()
     example = next(iter(data.test_dataloader()))
     model = GAN(*data.size(), example_data=example)
+    print(dict(model.named_parameters()).keys())
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[0, 1],
-        max_epochs=1000,
+        gpus=[1],
+        max_epochs=100,
         logger=tb_logger,
-        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback],
-        accelerator='dp'
+        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback]
         # precision=16
         # amp_backend='apex',
         # amp_level='O3'
