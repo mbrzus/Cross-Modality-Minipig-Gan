@@ -35,6 +35,7 @@ from monai.transforms import (
     RandRotated,
     ResizeWithPadOrCropd,
     ScaleIntensityRanged,
+    RandCropByPosNegLabeld,
     Spacingd,
     SpatialPadd,
     ToTensord,
@@ -200,6 +201,19 @@ class GAN(pl.LightningModule):
     def training_step(self, batch, batch_idx, optimizer_idx):
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
 
+        # organize the batch data into a dict
+        batch_data = [
+            {"t1w": t1, "t2w": t2}
+            for t1, t2 in zip(t1w_images, t2w_images)
+        ]
+
+        #TODO: do the patching and hopefully run the same code in a loop for every patch
+        transforms = Compose([
+            RandCropByPosNegLabeld(keys=["t1w", "t2w"], spatial_size=(32, 32, 32), num_samples=8),
+            ToTensord(keys=["t1w", "t2w"])]
+        )
+        patch_data = transforms(batch_data)
+
         # train generator
         if optimizer_idx == 0:
             # generate images
@@ -333,11 +347,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
                     relative=False,
                 ),
                 AddChanneld(keys=["t1w", "t2w"]),
-                # optional orientation change, I dont think we need it with our data
-                # Orientationd(keys=["t1w", "t2w"], axcodes="RAS"),
-                # we probably want to pad images to the same size (i didn't check the data so this probably will need an update)
-                # NOTE: should we consider using a resize rather than a crop/pad?
-                Resized(keys=["t1w", "t2w"], spatial_size=self.spatial_size),
+                Spacingd(keys=["t1w", "t2w"], pixdim=(1, 1, 1)),
+                ResizeWithPadOrCropd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
                 ToTensord(keys=["t1w", "t2w"]),
             ]
         )
