@@ -8,10 +8,9 @@ from collections import OrderedDict
 from itertools import product as cartesian_product
 from pathlib import Path
 
-import apex
 import matplotlib.pyplot as plt
 import numpy as np
-import pytorch_lightning as pl
+# import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -93,7 +92,69 @@ class Discriminator(nn.Module):
         validity = self.model_linear(out)
         return validity
 
+class CasNetGenerator(nn.Module):
+    # source: https://arxiv.org/pdf/1806.06397.pdf
+    def __init__(
+        self, img_shape, n_unet_blocks=6
+    ):  # TODO: change num u_net blocks for actual trraining
+        super().__init__()
+        self.img_shape = img_shape
 
+        def unet_block(
+            in_channels,
+            out_channels,
+            channels=(16, 32, 64, 128),
+            strides=(2, 2, 2),
+        ):
+            return UNet(
+                dimensions=3,
+                in_channels=in_channels,
+                out_channels=out_channels,
+                channels=channels,
+                strides=strides,
+                num_res_units=2,
+                norm=Norm.BATCH,
+            )
+
+        u_net_list = [unet_block(1, 1) for _ in range(n_unet_blocks)]
+        u_net_list.append(nn.Tanh())
+
+        self.model = nn.Sequential(*u_net_list)
+
+    def forward(self, x):
+        return self.model(x)
+
+# class CasNetGenerator(nn.Module):
+#     # source: https://arxiv.org/pdf/1806.06397.pdf
+#     def __init__(
+#         self, img_shape, n_unet_blocks=6
+#     ):  # TODO: change num u_net blocks for actual trraining
+#         super().__init__()
+#         self.img_shape = img_shape
+
+#         def unet_block(
+#             in_channels,
+#             out_channels,
+#             channels=(16, 32, 64, 128),
+#             strides=(2, 2, 2),
+#         ):
+#             return UNet(
+#                 dimensions=3,
+#                 in_channels=in_channels,
+#                 out_channels=out_channels,
+#                 channels=channels,
+#                 strides=strides,
+#                 num_res_units=2,
+#                 norm=Norm.BATCH,
+#             )
+
+#         u_net_list = [unet_block(1, 1) for _ in range(n_unet_blocks)]
+#         u_net_list.append(nn.Tanh())
+
+#         self.model = nn.Sequential(*u_net_list)
+
+#     def forward(self, x):
+#         return self.model(x)
 
 if __name__ == "__main__":
     arr = np.ones((128, 128, 128))
