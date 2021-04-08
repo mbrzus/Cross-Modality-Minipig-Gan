@@ -8,6 +8,8 @@ from collections import OrderedDict
 from itertools import product as cartesian_product
 from pathlib import Path
 
+from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d
+
 import apex
 import matplotlib.pyplot as plt
 import numpy as np
@@ -341,14 +343,16 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # TODO: look at splitting these for different training phases
 
 
-        # train_files = train_files[:50]
-        # val_files = val_files[:5]
-        # test_files = test_files[:5]
+        train_files = train_files[:50]
+        val_files = val_files[:5]
+        test_files = test_files[:5]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
             [
-                LoadImaged(keys=["t1w", "t2w"]),
+                LoadITKImaged(keys=["t1w", "t2w"]),
+                ResampleT1T2d(keys=["t1w", "t2w"], output_size=self.spatial_size),
+                ITKImageToNumpyd(keys=["t1w", "t2w"]),
                 ScaleIntensityRangePercentilesd(
                     keys=["t1w", "t2w"],
                     lower=1.0,
@@ -359,8 +363,6 @@ class HumanBrainDataModule(pl.LightningDataModule):
                     relative=False,
                 ),
                 AddChanneld(keys=["t1w", "t2w"]),
-                Spacingd(keys=["t1w", "t2w"], pixdim=(1, 1, 1)),
-                ResizeWithPadOrCropd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
                 ToTensord(keys=["t1w", "t2w"]),
             ]
         )
@@ -370,20 +372,20 @@ class HumanBrainDataModule(pl.LightningDataModule):
         self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            cache_num=2000,
-            num_workers=16,
+            cache_num=500,
+            num_workers=8,
         )
         self.val_dataset = CacheDataset(
             data=val_files,
             transform=transforms,
             cache_num=10,
-            num_workers=4,
+            num_workers=2,
         )
         self.test_dataset = CacheDataset(
             data=test_files,
             transform=transforms,
             cache_num=10,
-            num_workers=4,
+            num_workers=2,
         )
 
     def train_dataloader(self):
@@ -437,7 +439,7 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[0, 1],
+        gpus=[1],
         max_epochs=1000,
         logger=tb_logger,
         callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback],
