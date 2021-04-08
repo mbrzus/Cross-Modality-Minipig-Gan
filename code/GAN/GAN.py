@@ -90,7 +90,7 @@ from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6
+        self, img_shape, n_unet_blocks=6 # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -98,8 +98,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(16, 32, 64, 128),
-            strides=(2, 2, 2),
+            channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
+            strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
         ):
             return UNet(
                 dimensions=3,
