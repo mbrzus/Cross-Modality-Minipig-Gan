@@ -37,6 +37,7 @@ from monai.transforms import (
     RandRotated,
     ResizeWithPadOrCropd,
     ScaleIntensityRanged,
+    RandSpatialCropSamplesd,
     Spacingd,
     SpatialPadd,
     ToTensord,
@@ -92,7 +93,7 @@ from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6
+        self, img_shape, n_unet_blocks=6 # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -100,8 +101,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(16, 32, 64, 128),
-            strides=(2, 2, 2),
+            channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
+            strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -151,9 +152,9 @@ class Discriminator(nn.Module):
         self.model_linear = nn.Sequential(
             # Sigmoid 
             nn.Flatten(),
-            nn.Linear(512*6*6*6, 1024),
-            nn.Linear(1024, 128),
-            nn.Linear(128, 1),
+            nn.Linear(512*6*6*6, 1),
+            # nn.Linear(1024, 128),
+            # nn.Linear(128, 1),
             nn.Sigmoid()
         )
 
@@ -227,18 +228,42 @@ class GAN(pl.LightningModule):
         if optimizer_idx == 1:
             # Measure discriminator's ability to classify real from generated samples
 
+            ### Generate patches for the discriminator ###
+            # organize the batch data into a dict for the monai transform
+            batch_data = [
+                {"t2": t2, "t2_gt": t2_gt}
+                for t2, t2_gt in zip(self.generated_imgs, t2w_images)
+            ]
+
+            # get 4 patch samples from each image
+            patch_transform = Compose([
+                RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
+                                        roi_size=(32, 32, 32),
+                                        num_samples=4,
+                                        random_size=False)
+            ])
+            patch_data = patch_transform(batch_data)
+
+            # organize all the patches to create new t2 generated and t2 ground truth batches
+            t2_generated_batch = torch.cat(
+                [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+                dim=0)
+            t2_ground_truth_batch = torch.cat(
+                [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+                dim=0)
+
             # how well can it label as real?
             valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
             valid = valid.type_as(t1w_images)
 
-            real_loss = self.adversarial_loss(self.discriminator(t2w_images), valid)
+            real_loss = self.adversarial_loss(self.discriminator(t2_ground_truth_batch), valid)
 
             # how well can it label as fake?
-            fake = torch.zeros(t1w_images.shape[0], 1)
-            fake = fake.type_as(t1w_images)
+            fake = torch.zeros(t2_generated_batch.shape[0], 1)
+            fake = fake.type_as(t2_generated_batch)
 
             fake_loss = self.adversarial_loss(
-                self.discriminator(self(t1w_images).detach()), fake
+                self.discriminator(t2_generated_batch), fake
             )
 
             # discriminator loss is the average of these
@@ -259,6 +284,7 @@ class GAN(pl.LightningModule):
         input_data = self.example_input_array.type_as(self.discriminator.model_conv[0].weight)
         # log sampled images -- just logs from the last batch run
         plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
+
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
 class HumanBrainDataModule(pl.LightningDataModule):
@@ -337,11 +363,6 @@ class HumanBrainDataModule(pl.LightningDataModule):
                     relative=False,
                 ),
                 AddChanneld(keys=["t1w", "t2w"]),
-                # optional orientation change, I dont think we need it with our data
-                # Orientationd(keys=["t1w", "t2w"], axcodes="RAS"),
-                # we probably want to pad images to the same size (i didn't check the data so this probably will need an update)
-                # NOTE: should we consider using a resize rather than a crop/pad?
-                # Resized(keys=["t1w", "t2w"], spatial_size=self.spatial_size),
                 ToTensord(keys=["t1w", "t2w"]),
             ]
         )

@@ -32,6 +32,7 @@ from monai.transforms import (
     LoadImaged,
     Orientationd,
     RandGaussianNoised,
+    RandSpatialCropSamplesd,
     RandRotated,
     ResizeWithPadOrCropd,
     ScaleIntensityRanged,
@@ -96,13 +97,61 @@ class Discriminator(nn.Module):
 
 
 if __name__ == "__main__":
-    arr = np.ones((128, 128, 128))
-    arr = torch.from_numpy(arr)
-    arr = arr.unsqueeze(0).unsqueeze(0).cuda().type(torch.cuda.FloatTensor)
+    # arr = np.ones((128, 128, 128))
+    # arr = torch.from_numpy(arr)
+    # arr = arr.unsqueeze(0).unsqueeze(0).cuda().type(torch.cuda.FloatTensor)
+    #
+    # model = Discriminator((128, 128, 128))
+    # model.cuda()
+    # print(model)
+    # print(model.forward(arr))
+    # print(model.forward(arr).shape)
+    # #print(model.parameters())
 
-    model = Discriminator((128, 128, 128))
+
+### Testing patching for use in the discriminator ###
+    arr1 = np.ones((1, 1, 128, 128, 128))
+    arr1 = torch.from_numpy(arr1)
+    arr2 = np.ones((1, 1, 128, 128, 128))*0.5
+    arr2 = torch.from_numpy(arr2)
+
+    batch_data = [
+        {"t1w": t1, "t2w": t2}
+        for t1, t2 in zip(arr1, arr2)
+    ]
+    # print(batch_data)
+    # print(batch_data["t1w"])
+    # print(type(batch_data["t1w"]))
+    transforms = Compose([
+        RandSpatialCropSamplesd(keys=["t1w", "t2w"],
+                                roi_size=(32, 32, 32),
+                                num_samples=4,
+                                random_size=False)
+    ])
+    patch_data = transforms(batch_data)
+    print(type(patch_data))
+    print(len(patch_data))
+    print(type(patch_data[0]))
+    print(len(patch_data[0]))
+    print(type(patch_data[0][0]))
+    print(patch_data[0][0].keys())
+
+    # print(patch_data[0][0].keys())
+    print(type(patch_data[0][0]["t1w"]))
+    print(patch_data[0][0]["t1w"].size())
+    print(patch_data[0][1]["t1w"].size())
+    print(patch_data[0][2]["t1w"].size())
+    print(patch_data[0][3]["t1w"].size())
+
+    print(patch_data[0][0]["t2w"].size())
+    print(patch_data[0][1]["t2w"].size())
+    print(patch_data[0][2]["t2w"].size())
+    print(patch_data[0][3]["t2w"].size())
+
+    model = CasNetGenerator((128, 128, 128))
     model.cuda()
     print(model)
     print(model.forward(arr))
     print(model.forward(arr).shape)
     #print(model.parameters())
+
