@@ -35,7 +35,7 @@ from monai.transforms import (
     RandRotated,
     ResizeWithPadOrCropd,
     ScaleIntensityRanged,
-    RandCropByPosNegLabeld,
+    RandSpatialCropSamplesd,
     Spacingd,
     SpatialPadd,
     ToTensord,
@@ -150,9 +150,9 @@ class Discriminator(nn.Module):
         self.model_linear = nn.Sequential(
             # Sigmoid 
             nn.Flatten(),
-            nn.Linear(512*6*6*6, 1024),
-            nn.Linear(1024, 128),
-            nn.Linear(128, 1),
+            nn.Linear(512*6*6*6, 1),
+            # nn.Linear(1024, 128),
+            # nn.Linear(128, 1),
             nn.Sigmoid()
         )
 
@@ -201,19 +201,6 @@ class GAN(pl.LightningModule):
     def training_step(self, batch, batch_idx, optimizer_idx):
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
 
-        # organize the batch data into a dict
-        batch_data = [
-            {"t1w": t1, "t2w": t2}
-            for t1, t2 in zip(t1w_images, t2w_images)
-        ]
-
-        #TODO: do the patching and hopefully run the same code in a loop for every patch
-        transforms = Compose([
-            RandCropByPosNegLabeld(keys=["t1w", "t2w"], spatial_size=(32, 32, 32), num_samples=8),
-            ToTensord(keys=["t1w", "t2w"])]
-        )
-        patch_data = transforms(batch_data)
-
         # train generator
         if optimizer_idx == 0:
             # generate images
@@ -239,18 +226,42 @@ class GAN(pl.LightningModule):
         if optimizer_idx == 1:
             # Measure discriminator's ability to classify real from generated samples
 
+            ### Generate patches for the discriminator ###
+            # organize the batch data into a dict for the monai transform
+            batch_data = [
+                {"t2": t2, "t2_gt": t2_gt}
+                for t2, t2_gt in zip(self.generated_imgs, t2w_images)
+            ]
+
+            # get 4 patch samples from each image
+            patch_transform = Compose([
+                RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
+                                        roi_size=(32, 32, 32),
+                                        num_samples=4,
+                                        random_size=False)
+            ])
+            patch_data = patch_transform(batch_data)
+
+            # organize all the patches to create new t2 generated and t2 ground truth batches
+            t2_generated_batch = torch.cat(
+                [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+                dim=0)
+            t2_ground_truth_batch = torch.cat(
+                [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+                dim=0)
+
             # how well can it label as real?
             valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
             valid = valid.type_as(t1w_images)
 
-            real_loss = self.adversarial_loss(self.discriminator(t2w_images), valid)
+            real_loss = self.adversarial_loss(self.discriminator(t2_ground_truth_batch), valid)
 
             # how well can it label as fake?
-            fake = torch.zeros(t1w_images.shape[0], 1)
-            fake = fake.type_as(t1w_images)
+            fake = torch.zeros(t2_generated_batch.shape[0], 1)
+            fake = fake.type_as(t2_generated_batch)
 
             fake_loss = self.adversarial_loss(
-                self.discriminator(self(t1w_images).detach()), fake
+                self.discriminator(t2_generated_batch), fake
             )
 
             # discriminator loss is the average of these
@@ -271,6 +282,7 @@ class GAN(pl.LightningModule):
         input_data = self.example_input_array.type_as(self.discriminator.model_conv[0].weight)
         # log sampled images -- just logs from the last batch run
         plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
+
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
 class HumanBrainDataModule(pl.LightningDataModule):
