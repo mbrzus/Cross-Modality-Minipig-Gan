@@ -148,4 +148,10 @@ if __name__ == "__main__":
     print(patch_data[0][2]["t2w"].size())
     print(patch_data[0][3]["t2w"].size())
 
+    model = CasNetGenerator((128, 128, 128))
+    model.cuda()
+    print(model)
+    print(model.forward(arr))
+    print(model.forward(arr).shape)
+    #print(model.parameters())
 
