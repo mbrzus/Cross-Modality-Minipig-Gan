@@ -44,58 +44,10 @@ from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
 from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 
-class Discriminator(nn.Module):
-    def __init__(self, img_shape):
-        super().__init__()
-
-        # self.model = MONAIDiscriminator(
-        #     img_shape,
-        #     channels=(8, 16, 32, 64, 128, 256, 1),
-        #     strides=(2, 2, 2, 2, 2, 2, 2, 1),
-        #     num_res_units=2,
-        #     kernel_size=3,
-        #     act="PRELU",
-        #     norm=None,
-        #     last_act="SIGMOID",
-        # )
-
-        self.model_conv = nn.Sequential(
-            # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
-            nn.BatchNorm3d(64),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
-            nn.BatchNorm3d(128),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
-            nn.BatchNorm3d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
-            nn.BatchNorm3d(512),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        
-        self.model_linear = nn.Sequential(
-            # Sigmoid 
-            nn.Flatten(),
-            nn.Linear(512*6*6*6, 1024),
-            nn.Linear(1024, 128),
-            nn.Linear(128, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, img):
-        out = self.model_conv(img)
-        validity = self.model_linear(out)
-        return validity
-
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6
+        self, img_shape, n_unet_blocks=6 # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -103,8 +55,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(16, 32, 64, 128),
-            strides=(2, 2, 2),
+            channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
+            strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -123,38 +75,6 @@ class CasNetGenerator(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-
-# class CasNetGenerator(nn.Module):
-#     # source: https://arxiv.org/pdf/1806.06397.pdf
-#     def __init__(
-#         self, img_shape, n_unet_blocks=6
-#     ):  # TODO: change num u_net blocks for actual trraining
-#         super().__init__()
-#         self.img_shape = img_shape
-
-#         def unet_block(
-#             in_channels,
-#             out_channels,
-#             channels=(16, 32, 64, 128),
-#             strides=(2, 2, 2),
-#         ):
-#             return UNet(
-#                 dimensions=3,
-#                 in_channels=in_channels,
-#                 out_channels=out_channels,
-#                 channels=channels,
-#                 strides=strides,
-#                 num_res_units=2,
-#                 norm=Norm.BATCH,
-#             )
-
-#         u_net_list = [unet_block(1, 1) for _ in range(n_unet_blocks)]
-#         u_net_list.append(nn.Tanh())
-
-#         self.model = nn.Sequential(*u_net_list)
-
-#     def forward(self, x):
-#         return self.model(x)
 
 if __name__ == "__main__":
     arr = np.ones((128, 128, 128))
