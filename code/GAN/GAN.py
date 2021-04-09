@@ -103,6 +103,8 @@ class CasNetGenerator(nn.Module):
             out_channels,
             channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
             strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
+            # channels=(16, 32, 64, 128),
+            # strides=(2, 2, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -120,6 +122,7 @@ class CasNetGenerator(nn.Module):
         self.model = nn.Sequential(*u_net_list)
 
     def forward(self, x):
+        print("Generator forward")
         return self.model(x)
 
 
@@ -159,6 +162,7 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, img):
+        print("Discriminator forward")
         out = self.model_conv(img)
         validity = self.model_linear(out)
         return validity
@@ -189,9 +193,10 @@ class GAN(pl.LightningModule):
         self.generator = CasNetGenerator(img_shape=data_shape)
         self.discriminator = Discriminator(img_shape=data_shape)
 
-        self.example_input_array = example_data["t1w"]
+        self.example_input_array = example_data["t1w"].unsqueeze(dim=0)
 
     def forward(self, x):
+        print("Gan forward")
         return self.generator(x)
 
     def adversarial_loss(self, y_hat, y):
@@ -201,10 +206,12 @@ class GAN(pl.LightningModule):
         return F.l1_loss(y_hat, y)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
+        print("training step")
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
 
         # train generator
         if optimizer_idx == 0:
+            print("gen optimizer")
             # generate images
             generated_imgs = self(t1w_images)
             self.generated_imgs = generated_imgs
@@ -226,6 +233,7 @@ class GAN(pl.LightningModule):
 
         # train discriminator
         if optimizer_idx == 1:
+            print("discriminator optimizer")
             # Measure discriminator's ability to classify real from generated samples
 
             ### Generate patches for the discriminator ###
@@ -343,9 +351,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # TODO: look at splitting these for different training phases
 
 
-        train_files = train_files[:50]
-        val_files = val_files[:5]
-        test_files = test_files[:5]
+        train_files = train_files[:20]
+        val_files = val_files[:1]
+        test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -435,11 +443,11 @@ if __name__ == "__main__":
 
     data = HumanBrainDataModule()
     data.prepare_data()
-    example = next(iter(data.test_dataloader()))
+    example = data.test_dataloader().dataset.__getitem__(0)
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[1],
+        gpus=[0],
         max_epochs=1000,
         logger=tb_logger,
         callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback],
