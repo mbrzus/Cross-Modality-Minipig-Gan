@@ -1,4 +1,5 @@
 import itk
+from pathlib import Path
 import numpy as np
 
 
@@ -11,6 +12,12 @@ class LoadITKImaged(object):
     def __call__(self, data):
         d = dict(data)
         for k in self.keys:
+            # save off the file name
+            if f"{k}_meta_dict" not in d.keys():
+                d[f"{k}_meta_dict"] = {"filename": d[k]}
+            else:
+                d[f"{k}_meta_dict"]["filename"] = d[k]
+
             d[k] = itk.imread(d[k], self.pixel_type)
 
         d = self.meta_updater(d)
@@ -34,7 +41,8 @@ class UpdateMetaDatad(object):
         d = dict(data)
         for k in self.keys:
             image = d[k]
-            d[f"{k}_meta_dict"] = {}
+            if f"{k}_meta_dict" not in d.keys():
+                d[f"{k}_meta_dict"] = {}
             d[f"{k}_meta_dict"]["origin"] = np.array(image.GetOrigin())
             d[f"{k}_meta_dict"]["spacing"] = np.array(image.GetSpacing())
             d[f"{k}_meta_dict"]["direction"] = get_direction_cos_from_image(image)
@@ -72,6 +80,29 @@ class ToITKImaged(object):
 
             d[k] = itk_image
         return d
+
+class SaveITKImaged(object):
+    def __init__(self, keys, output_postfix="_inf"):
+        self.keys = keys
+        self.postfix = output_postfix
+        
+
+    def __call__(self, data):
+        d = dict(data)
+        for k in self.keys:
+            input_filename = Path(d[f"{k}_meta_dict"]["filename"]).absolute()
+            parent_dir = input_filename.parent
+            basename = str(input_filename.name).split('.')[0]
+            extension = '.'.join(str(input_filename).split('.')[-2:])
+            
+            output_filename = str(parent_dir / f"{basename}{self.postfix}.{extension}")
+            print("writing to", output_filename)
+            itk.imwrite(d[k], output_filename)
+            pass
+
+        return d
+
+        
 
 class ResampleT1T2d(object):
     def __init__(self, keys, output_size: list = [256, 256, 256], image_type=itk.Image[itk.F, 3]):
@@ -131,3 +162,5 @@ class ResampleT1T2d(object):
         d[self.t1w_key] = resampled_t1w
         d[self.t2w_key] = resampled_t2w
         return d
+
+unsqueze_lambda = lambda x: x.squeeze(dim=0)
