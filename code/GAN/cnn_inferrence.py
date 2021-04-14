@@ -64,18 +64,25 @@ class BrainExtraction(pl.LightningModule):
 
 if __name__ == "__main__":
     # define path to trained model parameters
-    checkpoints_dir = "/Shared/sinapse/cjohnson/CNN/logs"
-    params_dir = "/Shared/sinapse/cjohnson/CNN/logs/default/minipig_3mm"
+    # checkpoints_dir = "/Shared/sinapse/cjohnson/CNN/logs"
+    # params_dir = "/Shared/sinapse/cjohnson/CNN/logs/default/minipig_3mm"
+
+    root_dir = str(Path(".").absolute().parent)  # use relative path
+
+    # set up loggers and checkpoints
+    checkpoints_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
+
     # define model and load its parameters
     model = BrainExtraction.load_from_checkpoint(
         checkpoint_path=f"{checkpoints_dir}/minipig_3mm.ckpt",
-        hparams_file=f"{params_dir}/hparams.yaml"
+        hparams_file=f"{checkpoints_dir}/hparams.yaml"
+        # hparams_file=f"{params_dir}/hparams.yaml"
     )
     device = torch.device("cuda:0")
     model.to(device)
 
     # define path for inference and the MONAI savers
-    inferrence_dir = "/home/mbrzus/programming/masterthesis/code/CNN/inferred_test_images/minipig_3mm"
+    inferrence_dir = "/Shared/sinapse/cjohnson/CNN/inferred_test_images/minipig_3mm"
     saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="")
     saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/label", output_postfix="")
     saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_label", output_postfix="")
