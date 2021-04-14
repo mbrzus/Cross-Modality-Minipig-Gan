@@ -55,8 +55,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
-            strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
+            channels=(16, 32, 64, 128),#, 512),
+            strides=(2, 2, 2),#, 2),
         ):
             return UNet(
                 dimensions=3,
