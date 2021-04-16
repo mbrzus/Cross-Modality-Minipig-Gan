@@ -18,6 +18,7 @@ from monai.losses import DiceLoss
 from monai.metrics import compute_meandice, compute_hausdorff_distance
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet
+from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d
 from monai.transforms import (
     AddChanneld,
     Compose,
@@ -80,21 +81,42 @@ test_files = structure_to_monai_dict(test_structure)
 
 # get just a very small portion of the data for initial test (fail fast)
 # TODO: look at splitting these for different training phases
-
-
 train_files = train_files[:1]
 # val_files = val_files[:5]
 # test_files = test_files[:5]
+
 # path to directory where the tested images will be stored
 path_to_write = "/Shared/sinapse/mbrzus/transform_test"
-saver = NiftiSaver(output_dir=path_to_write, output_postfix="pad",
+saver = NiftiSaver(output_dir=path_to_write, output_postfix="resample",
                    dtype=None)
 
 # MONAI transforms used for preprocessing image
 # detailed description of the transforms and their behavior is in the preprocessing_transforms.pptx presentation
+# transforms = Compose(
+#     [
+#         LoadImaged(keys=["t1w", "t2w"]),
+#         ScaleIntensityRangePercentilesd(
+#             keys=["t1w", "t2w"],
+#             lower=1.0,
+#             upper=99.0,
+#             b_min=-1.0,
+#             b_max=1.0,
+#             clip=True,
+#             relative=False,
+#         ),
+#         AddChanneld(keys=["t1w", "t2w"]),
+#         Spacingd(keys=["t1w", "t2w"], pixdim=(1, 1, 1)),
+#         SpatialPadd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
+#         #ResizeWithPadOrCropd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
+#         ToTensord(keys=["t1w", "t2w"]),
+#     ]
+# )
+
 transforms = Compose(
     [
-        LoadImaged(keys=["t1w", "t2w"]),
+        LoadITKImaged(keys=["t1w", "t2w"]),
+        ResampleT1T2d(keys=["t1w", "t2w"], output_size=[128, 128, 128]),
+        ITKImageToNumpyd(keys=["t1w", "t2w"]),
         ScaleIntensityRangePercentilesd(
             keys=["t1w", "t2w"],
             lower=1.0,
@@ -105,9 +127,6 @@ transforms = Compose(
             relative=False,
         ),
         AddChanneld(keys=["t1w", "t2w"]),
-        Spacingd(keys=["t1w", "t2w"], pixdim=(1, 1, 1)),
-        SpatialPadd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
-        #ResizeWithPadOrCropd(keys=["t1w", "t2w"], spatial_size=(300, 300, 300)),
         ToTensord(keys=["t1w", "t2w"]),
     ]
 )
@@ -123,9 +142,9 @@ for i in range(1): #range(len(train_labels)):
     print(tensor_im.size())
     tensor_im2 = item['t2w']  # get the image after transformations
     print(tensor_im2.size())
-    item['t1w_meta_dict']['spatial_shape'] = np.array([300, 300, 300])
+    item['t1w_meta_dict']['spatial_shape'] = np.array([128, 128, 128])
     print(item['t1w_meta_dict'])
-    item['t2w_meta_dict']['spatial_shape'] = np.array([300, 300, 300])
+    item['t2w_meta_dict']['spatial_shape'] = np.array([128, 128, 128])
     print(item['t2w_meta_dict'])
     saver.save(data=item['t1w'], meta_data=item['t1w_meta_dict'])
     saver.save(data=item['t2w'], meta_data=item['t2w_meta_dict'])

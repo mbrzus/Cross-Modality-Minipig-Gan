@@ -133,34 +133,34 @@ class Discriminator(nn.Module):
     def __init__(self, img_shape):
         super().__init__()
 
+        kernel = (3, 3, 3)
+        stride = (1, 1, 1)
         self.model_conv = nn.Sequential(
             # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(512),
             nn.LeakyReLU(0.2, inplace=True)
         )
-        
+
         self.model_linear = nn.Sequential(
-            # Sigmoid 
+            # Sigmoid
             nn.Flatten(),
-            nn.Linear(512*6*6*6, 1),
-            # nn.Linear(1024, 128),
-            # nn.Linear(128, 1),
+            nn.Linear(512 * 24 * 24 * 24, 1),
             nn.Sigmoid()
         )
-
+        
     def forward(self, img):
         print("Discriminator forward")
         out = self.model_conv(img)
@@ -206,29 +206,52 @@ class GAN(pl.LightningModule):
         return F.l1_loss(y_hat, y)
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        print("training step")
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
+
+        # generate images
+        self.generated_imgs = self(t1w_images)
+
+        ### Generate patches for the discriminator ###
+        # organize the batch data into a dict for the monai transform
+        batch_data = [
+            {"t2": t2, "t2_gt": t2_gt}
+            for t2, t2_gt in zip(self.generated_imgs, t2w_images)
+        ]
+
+        # get 4 patch samples from each image
+        patch_transform = Compose([
+            RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
+                                    roi_size=(32, 32, 32),
+                                    num_samples=4,
+                                    random_size=False)
+        ])
+        patch_data = patch_transform(batch_data)
+
+        # organize all the patches to create new t2 generated and t2 ground truth batches
+        t2_generated_batch = torch.cat(
+            [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+            dim=0)
+        t2_ground_truth_batch = torch.cat(
+            [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
+            dim=0)
 
         # train generator
         if optimizer_idx == 0:
-            print("gen optimizer")
-            # generate images
-            generated_imgs = self(t1w_images)
-            self.generated_imgs = generated_imgs
             # ground truth result (ie: all fake)
             # put on GPU because we created this tensor inside training_loop
 
-            valid = torch.ones(t1w_images.shape[0], 1)
-            valid = valid.type_as(t1w_images)
+            valid = torch.ones(t2_ground_truth_batch.shape[0], 1)
+            valid = valid.type_as(t2_ground_truth_batch)
 
             # adversarial loss is binary cross-entropy
-            g_adv_loss = self.adversarial_loss(self.discriminator(generated_imgs), valid)
+            g_adv_loss = self.adversarial_loss(self.discriminator(t2_generated_batch), valid)
             self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-            g_recon_loss = self.reconstruction_loss(generated_imgs, t2w_images)
-            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            g_recon_loss = self.reconstruction_loss(t2_generated_batch, t2_ground_truth_batch)
+            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True,
+                     sync_dist=True)
             g_loss = g_adv_loss + g_recon_loss
             self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-            
+
             return g_loss
 
         # train discriminator
@@ -236,33 +259,9 @@ class GAN(pl.LightningModule):
             print("discriminator optimizer")
             # Measure discriminator's ability to classify real from generated samples
 
-            ### Generate patches for the discriminator ###
-            # organize the batch data into a dict for the monai transform
-            batch_data = [
-                {"t2": t2, "t2_gt": t2_gt}
-                for t2, t2_gt in zip(self.generated_imgs, t2w_images)
-            ]
-
-            # get 4 patch samples from each image
-            patch_transform = Compose([
-                RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
-                                        roi_size=(32, 32, 32),
-                                        num_samples=4,
-                                        random_size=False)
-            ])
-            patch_data = patch_transform(batch_data)
-
-            # organize all the patches to create new t2 generated and t2 ground truth batches
-            t2_generated_batch = torch.cat(
-                [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-                dim=0)
-            t2_ground_truth_batch = torch.cat(
-                [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-                dim=0)
-
             # how well can it label as real?
-            valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
-            valid = valid.type_as(t1w_images)
+            valid = torch.ones(t2_ground_truth_batch.shape[0], 1) * self.hparams.one_sided_label_value
+            valid = valid.type_as(t2_ground_truth_batch)
 
             real_loss = self.adversarial_loss(self.discriminator(t2_ground_truth_batch), valid)
 

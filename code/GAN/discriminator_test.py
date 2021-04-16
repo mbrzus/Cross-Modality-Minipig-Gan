@@ -46,112 +46,104 @@ from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
 from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 
+
 class Discriminator(nn.Module):
     def __init__(self, img_shape):
         super().__init__()
 
-        # self.model = MONAIDiscriminator(
-        #     img_shape,
-        #     channels=(8, 16, 32, 64, 128, 256, 1),
-        #     strides=(2, 2, 2, 2, 2, 2, 2, 1),
-        #     num_res_units=2,
-        #     kernel_size=3,
-        #     act="PRELU",
-        #     norm=None,
-        #     last_act="SIGMOID",
-        # )
-
+        kernel = (3, 3, 3)
+        stride = (1, 1, 1)
         self.model_conv = nn.Sequential(
             # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
+            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
+            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
+            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), stride=(2, 2, 2), bias=False),
+            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(512),
             nn.LeakyReLU(0.2, inplace=True)
         )
-        
+
         self.model_linear = nn.Sequential(
-            # Sigmoid 
+            # Sigmoid
             nn.Flatten(),
-            nn.Linear(512*6*6*6, 1024),
-            nn.Linear(1024, 128),
-            nn.Linear(128, 1),
+            nn.Linear(512 * 24 * 24 * 24, 1),
             nn.Sigmoid()
         )
 
     def forward(self, img):
+        print("Discriminator forward")
         out = self.model_conv(img)
+        print(out.shape)
         validity = self.model_linear(out)
         return validity
 
 
 
 if __name__ == "__main__":
-    # arr = np.ones((128, 128, 128))
-    # arr = torch.from_numpy(arr)
-    # arr = arr.unsqueeze(0).unsqueeze(0).cuda().type(torch.cuda.FloatTensor)
-    #
-    # model = Discriminator((128, 128, 128))
-    # model.cuda()
-    # print(model)
-    # print(model.forward(arr))
-    # print(model.forward(arr).shape)
-    # #print(model.parameters())
+    arr = np.ones((32, 32, 32))
+    arr = torch.from_numpy(arr)
+    arr = arr.unsqueeze(0).unsqueeze(0).cuda().type(torch.cuda.FloatTensor)
 
-
-### Testing patching for use in the discriminator ###
-    arr1 = np.ones((1, 1, 128, 128, 128))
-    arr1 = torch.from_numpy(arr1)
-    arr2 = np.ones((1, 1, 128, 128, 128))*0.5
-    arr2 = torch.from_numpy(arr2)
-
-    batch_data = [
-        {"t1w": t1, "t2w": t2}
-        for t1, t2 in zip(arr1, arr2)
-    ]
-    # print(batch_data)
-    # print(batch_data["t1w"])
-    # print(type(batch_data["t1w"]))
-    transforms = Compose([
-        RandSpatialCropSamplesd(keys=["t1w", "t2w"],
-                                roi_size=(32, 32, 32),
-                                num_samples=4,
-                                random_size=False)
-    ])
-    patch_data = transforms(batch_data)
-    print(type(patch_data))
-    print(len(patch_data))
-    print(type(patch_data[0]))
-    print(len(patch_data[0]))
-    print(type(patch_data[0][0]))
-    print(patch_data[0][0].keys())
-
-    # print(patch_data[0][0].keys())
-    print(type(patch_data[0][0]["t1w"]))
-    print(patch_data[0][0]["t1w"].size())
-    print(patch_data[0][1]["t1w"].size())
-    print(patch_data[0][2]["t1w"].size())
-    print(patch_data[0][3]["t1w"].size())
-
-    print(patch_data[0][0]["t2w"].size())
-    print(patch_data[0][1]["t2w"].size())
-    print(patch_data[0][2]["t2w"].size())
-    print(patch_data[0][3]["t2w"].size())
-
-    model = CasNetGenerator((128, 128, 128))
+    model = Discriminator((32, 32, 32))
     model.cuda()
     print(model)
     print(model.forward(arr))
     print(model.forward(arr).shape)
     #print(model.parameters())
+
+
+### Testing patching for use in the discriminator ###
+    # arr1 = np.ones((1, 1, 128, 128, 128))
+    # arr1 = torch.from_numpy(arr1)
+    # arr2 = np.ones((1, 1, 128, 128, 128))*0.5
+    # arr2 = torch.from_numpy(arr2)
+    #
+    # batch_data = [
+    #     {"t1w": t1, "t2w": t2}
+    #     for t1, t2 in zip(arr1, arr2)
+    # ]
+    # # print(batch_data)
+    # # print(batch_data["t1w"])
+    # # print(type(batch_data["t1w"]))
+    # transforms = Compose([
+    #     RandSpatialCropSamplesd(keys=["t1w", "t2w"],
+    #                             roi_size=(32, 32, 32),
+    #                             num_samples=4,
+    #                             random_size=False)
+    # ])
+    # patch_data = transforms(batch_data)
+    # print(type(patch_data))
+    # print(len(patch_data))
+    # print(type(patch_data[0]))
+    # print(len(patch_data[0]))
+    # print(type(patch_data[0][0]))
+    # print(patch_data[0][0].keys())
+    #
+    # # print(patch_data[0][0].keys())
+    # print(type(patch_data[0][0]["t1w"]))
+    # print(patch_data[0][0]["t1w"].size())
+    # print(patch_data[0][1]["t1w"].size())
+    # print(patch_data[0][2]["t1w"].size())
+    # print(patch_data[0][3]["t1w"].size())
+    #
+    # print(patch_data[0][0]["t2w"].size())
+    # print(patch_data[0][1]["t2w"].size())
+    # print(patch_data[0][2]["t2w"].size())
+    # print(patch_data[0][3]["t2w"].size())
+    #
+    # model = CasNetGenerator((128, 128, 128))
+    # model.cuda()
+    # print(model)
+    # print(model.forward(arr))
+    # print(model.forward(arr).shape)
+    # #print(model.parameters())
 
