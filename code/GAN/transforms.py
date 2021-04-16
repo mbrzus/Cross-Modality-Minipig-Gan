@@ -11,6 +11,7 @@ class LoadITKImaged(object):
     def __call__(self, data):
         d = dict(data)
         for k in self.keys:
+            print(f"reading {d[k]}")
             d[k] = itk.imread(d[k], self.pixel_type)
 
         d = self.meta_updater(d)
@@ -32,6 +33,7 @@ class UpdateMetaDatad(object):
 
     def __call__(self, data):
         d = dict(data)
+        print("saving meta")
         for k in self.keys:
             image = d[k]
             d[f"{k}_meta_dict"] = {}
@@ -51,6 +53,7 @@ class ITKImageToNumpyd(object):
     def __call__(self, data):
         d = dict(data)
         d = self.meta_updater(d)
+        print('to np')
         for k in self.keys:
             d[k] = itk.array_from_image(d[k])
         
@@ -83,51 +86,56 @@ class ResampleT1T2d(object):
 
         # define itk types
         self.image_type = image_type
-        
+
         # linear iterpolation
         self.linear_interpolator = itk.LinearInterpolateImageFunction[self.image_type, itk.D].New()
         self.nearest_interpolator = itk.NearestNeighborInterpolateImageFunction[self.image_type, itk.D].New()
         # identity transform
         self.identity_transform = itk.IdentityTransform[itk.D, 3].New()
-        # resampler
-        self.resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
-        
-        # identity direction cosine
-        self.identity_direction = self.image_type.New().GetDirection()
-        self.identity_direction.SetIdentity()
-
-        # configure resampler
-        self.resampler.SetSize(self.output_size)
-        self.resampler.SetInterpolator(self.linear_interpolator)
-        self.resampler.SetTransform(self.identity_transform)
-        self.resampler.SetOutputDirection(self.identity_direction)
-
-
         
 
     def __call__(self, data):
+        print("start resampling")
+
+        print("define resampler")
+        # configure resampler
+        resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
+        resampler.SetSize(self.output_size)
+        resampler.SetInterpolator(self.linear_interpolator)
+        resampler.SetTransform(self.identity_transform)
+        # identity direction cosine
+        identity_direction = self.image_type.New().GetDirection()
+        identity_direction.SetIdentity()
+        resampler.SetOutputDirection(identity_direction)
+
         d = dict(data)
         t1w_itk_image = d[self.t1w_key]
         t2w_itk_image = d[self.t2w_key]
         
         # set origin to t1w origin
-        self.resampler.SetOutputOrigin(t1w_itk_image.GetOrigin())
+        resampler.SetOutputOrigin(t1w_itk_image.GetOrigin())
         
         # calculate necessary spacing
         physical_extent = np.array(t1w_itk_image.GetLargestPossibleRegion().GetSize()) * np.array(t1w_itk_image.GetSpacing())
         output_spacing = physical_extent / np.array(self.output_size)
-        self.resampler.SetOutputSpacing(output_spacing)
+        resampler.SetOutputSpacing(output_spacing)
         
         # process t1w
-        self.resampler.SetInput(t1w_itk_image)
-        self.resampler.UpdateLargestPossibleRegion()
-        resampled_t1w = self.resampler.GetOutput()
+        resampler.SetInput(t1w_itk_image)
+        print("updating resampler")
+        # resampler.SetNumberOf
+        resampler.UpdateLargestPossibleRegion()
+        print("updated resampler")
+
+        resampled_t1w = resampler.GetOutput()
         
         # process t2w
-        self.resampler.SetInput(t2w_itk_image)
-        self.resampler.UpdateLargestPossibleRegion()
-        resampled_t2w = self.resampler.GetOutput()
+        resampler.SetInput(t2w_itk_image)
+        resampler.UpdateLargestPossibleRegion()
+        resampled_t2w = resampler.GetOutput()
         
         d[self.t1w_key] = resampled_t1w
         d[self.t2w_key] = resampled_t2w
+        print("end resampling")
+
         return d
