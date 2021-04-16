@@ -92,7 +92,7 @@ from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6 # The MEDGAN paper had the best results with 6 unet blocks
+        self, img_shape, n_unet_blocks=3 # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -100,8 +100,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(64, 128, 256, 512, 512, 512, 512),#, 512),
-            strides=(2, 2, 2, 2, 2, 2, 2),#, 2),
+            channels=(64, 128, 256, 512, 512),#, 512),
+            strides=(2, 2, 2, 2, 2),#, 2),
             # channels=(16, 32, 64, 128),
             # strides=(2, 2, 2),
         ):
@@ -121,7 +121,7 @@ class CasNetGenerator(nn.Module):
         self.model = nn.Sequential(*u_net_list)
 
     def forward(self, x):
-        print("Generator forward")
+        # print("Generator forward")
         return self.model(x)
 
 
@@ -161,11 +161,40 @@ class Discriminator(nn.Module):
         )
         
     def forward(self, img):
-        print("Discriminator forward")
+        # print("Discriminator forward")
         out = self.model_conv(img)
         validity = self.model_linear(out)
         return validity
 
+# custom data iterator (HACKITY HACKING HACK)
+# ONLY WORKS FOR THIS PROJECT DO NOT DUPLICATE
+# DEFAULT DROPS LAST BATCH
+class CustomDataLoader(object):
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.curr_index = 0
+        self.batch_size = batch_size
+        self.n_elems = len(dataset)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.curr_index + self.batch_size > self.n_elems:
+            self.curr_index = 0
+        
+        t1w_batch = []
+        t2w_batch = []
+        starting_index = self.curr_index
+        while self.curr_index < starting_index + self.batch_size:
+            # print(starting_index, self.curr_index)
+            t1w_batch.append(self.dataset.__getitem__(self.curr_index)["t1w"])
+            t2w_batch.append(self.dataset.__getitem__(self.curr_index)["t2w"])
+            self.curr_index = self.curr_index + 1
+
+        t1w_batch = torch.cat(t1w_batch, dim=0)
+        t2w_batch = torch.cat(t2w_batch, dim=0)
+        return {"t1w":t1w_batch, "t2w":t2w_batch}
 
 class GAN(pl.LightningModule):
     # note: i don't think we need a latenet dim? -- isn't the t1w image just the latent space?
@@ -202,7 +231,7 @@ class GAN(pl.LightningModule):
         self.example_input_array = example_data["t1w"].unsqueeze(dim=0)
 
     def forward(self, x):
-        print("Gan forward")
+        # print("Gan forward")
         return self.generator(x)
 
     def adversarial_loss(self, y_hat, y):
@@ -213,10 +242,10 @@ class GAN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
-        t1w_images = t1w_images.unsqueeze(dim=0)
-        t2w_images = t2w_images.unsqueeze(dim=0)
-        print(t1w_images.shape)
-        print(t2w_images.shape)
+        t1w_images = t1w_images.unsqueeze(dim=1)
+        t2w_images = t2w_images.unsqueeze(dim=1)
+        # print(t1w_images.shape)
+        # print(t2w_images.shape)
 
         # generate images
         generated_imgs = self(t1w_images)
@@ -242,38 +271,9 @@ class GAN(pl.LightningModule):
             [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
             dim=0)
 
-
-
-        # generate images
-        self.generated_imgs = self(t1w_images)
-
-        ### Generate patches for the discriminator ###
-        # organize the batch data into a dict for the monai transform
-        batch_data = [
-            {"t2": t2, "t2_gt": t2_gt}
-            for t2, t2_gt in zip(self.generated_imgs, t2w_images)
-        ]
-
-        # get 4 patch samples from each image
-        patch_transform = Compose([
-            RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
-                                    roi_size=(32, 32, 32),
-                                    num_samples=4,
-                                    random_size=False)
-        ])
-        patch_data = patch_transform(batch_data)
-
-        # organize all the patches to create new t2 generated and t2 ground truth batches
-        t2_generated_batch = torch.cat(
-            [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-            dim=0)
-        t2_ground_truth_batch = torch.cat(
-            [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-            dim=0)
-
         # train generator
         if optimizer_idx == 0:
-            print("gen optimizer")
+            # print("gen optimizer")
 
             # ground truth result (ie: all fake)
             # put on GPU because we created this tensor inside training_loop
@@ -294,7 +294,7 @@ class GAN(pl.LightningModule):
 
         # train discriminator
         if optimizer_idx == 1:
-            print("discriminator optimizer")
+            # print("discriminator optimizer")
             # Measure discriminator's ability to classify real from generated samples
 
             # how well can it label as real?
@@ -388,9 +388,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # TODO: look at splitting these for different training phases
 
 
-        # train_files = train_files[:20]
+        train_files = train_files[:20]
         # val_files = val_files[:1]
-        # test_files = test_files[:1]
+        test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -414,11 +414,11 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
         # we use cached datasets - these are 10x faster than regular datasets
         # TODO: adjust cache rate to fix memory problems
-        self.train_dataset = Dataset(
+        self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            # cache_num=500,
-            # num_workers=8,
+            cache_num=500,
+            num_workers=8,
         )
         # self.val_dataset = CacheDataset(
         #     data=val_files,
@@ -426,18 +426,19 @@ class HumanBrainDataModule(pl.LightningDataModule):
         #     cache_num=10,
         #     num_workers=2,
         # )
-        self.test_dataset = Dataset(
+        self.test_dataset = CacheDataset(
             data=test_files,
             transform=transforms,
-            # cache_num=10,
-            # num_workers=2,
+            cache_num=10,
+            num_workers=2,
         )
 
     def train_dataloader(self):
         train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=1, shuffle=True, num_workers=1
+            self.train_dataset, batch_size=1, shuffle=True, num_workers=8
         )
-        return iter(self.train_dataset)
+        return CustomDataLoader(self.train_dataset, batch_size=5)
+        # return iter(self.train_dataset)
 
     # def val_dataloader(self):
     #     val_loader = torch.utils.data.DataLoader(
@@ -449,7 +450,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
         test_loader = torch.utils.data.DataLoader(
             self.test_dataset, batch_size=1, num_workers=1
         )
-        return iter(self.test_dataset)
+        return CustomDataLoader(self.test_dataset, batch_size=5)
+        # return iter(self.test_dataset)
 
 
 if __name__ == "__main__":
@@ -480,7 +482,8 @@ if __name__ == "__main__":
 
     data = HumanBrainDataModule()
     data.prepare_data()
-    example = data.test_dataset.__getitem__(0) #data.test_dataloader().dataset.__getitem__(0)
+    example = data.test_dataloader().dataset.__getitem__(0)
+    # example = data.test_dataset.__getitem__(0) #data.test_dataloader().dataset.__getitem__(0)
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
