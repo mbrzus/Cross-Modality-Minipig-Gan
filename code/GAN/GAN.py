@@ -133,34 +133,34 @@ class Discriminator(nn.Module):
     def __init__(self, img_shape):
         super().__init__()
 
+        kernel = (3, 3, 3)
+        stride = (1, 1, 1)
         self.model_conv = nn.Sequential(
             # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=(4, 4, 4), stride=(2, 2, 2)),
+            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=kernel, stride=stride),
             nn.BatchNorm3d(512),
             nn.LeakyReLU(0.2, inplace=True)
         )
-        
+
         self.model_linear = nn.Sequential(
-            # Sigmoid 
+            # Sigmoid
             nn.Flatten(),
-            nn.Linear(512*6*6*6, 1),
-            # nn.Linear(1024, 128),
-            # nn.Linear(128, 1),
+            nn.Linear(512 * 24 * 24 * 24, 1),
             nn.Sigmoid()
         )
-
+        
     def forward(self, img):
         print("Discriminator forward")
         out = self.model_conv(img)
