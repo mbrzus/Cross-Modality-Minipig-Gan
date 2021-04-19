@@ -6,6 +6,7 @@ import itk
 
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
+# from pytorch_lightning import LightningModule 
 import torch
 from joblib import Parallel, delayed
 import json
@@ -29,7 +30,7 @@ from monai.transforms import (
     Orientationd,
     SpatialPadd,
     RandCropByPosNegLabeld,
-    SaveImaged,
+    # SaveImaged,
     ScaleIntensityRangePercentilesd,
     ScaleIntensityRanged,
     ResizeWithPadOrCropd,
@@ -67,34 +68,48 @@ if __name__ == "__main__":
     # checkpoints_dir = "/Shared/sinapse/cjohnson/CNN/logs"
     # params_dir = "/Shared/sinapse/cjohnson/CNN/logs/default/minipig_3mm"
 
-    root_dir = str(Path(".").absolute().parent)  # use relative path
+    # root_dir = str(Path(".").absolute().parent)  # use relative path
 
-    # set up loggers and checkpoints
-    checkpoints_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
+    # # set up loggers and checkpoints
+    # checkpoints_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
+
+    # checkpoints_dir = "/Shared/sinapse/aml"
 
     # define model and load its parameters
     model = BrainExtraction.load_from_checkpoint(
-        checkpoint_path=f"{checkpoints_dir}/minipig_3mm.ckpt",
-        hparams_file=f"{checkpoints_dir}/hparams.yaml"
+        # checkpoint_path=f"/Shared/sinapse/aml/gen_epoch=0-g_loss=0.00-d_loss=0.00.ckpt",
+        checkpoint_path=f"/Shared/sinapse/checkpoint.ckpt",
+        hparams_file=f"/Shared/sinapse/aml/hparams.yaml",
+        strict=False
+        # checkpoint_path=f"{checkpoints_dir}/minipig_3mm.ckpt",
+        # hparams_file=f"{checkpoints_dir}/hparams.yaml"
         # hparams_file=f"{params_dir}/hparams.yaml"
     )
     device = torch.device("cuda:0")
     model.to(device)
 
     # define path for inference and the MONAI savers
-    inferrence_dir = "/Shared/sinapse/cjohnson/CNN/inferred_test_images/minipig_3mm"
+    # inferrence_dir = "/Shared/sinapse/cjohnson/CNN/inferred_test_images/minipig_3mm"
+    # inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
+    inferrence_dir = "/Shared/sinapse/aml"
     saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="")
     saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/label", output_postfix="")
     saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_label", output_postfix="")
 
     # load the test data
-    with open('../metadata/minipig_label_paths.json', 'r') as openfile:
-        label_json = json.load(openfile)
-    with open('../metadata/minipig_image_paths.json', 'r') as openfile:
-        image_json = json.load(openfile)
+    # with open('../metadata/minipig_label_paths.json', 'r') as openfile:
+    #     label_json = json.load(openfile)
+    # with open('../metadata/minipig_image_paths.json', 'r') as openfile:
+    #     image_json = json.load(openfile)
+    with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
+        t1_json = json.load(openfile)
+    with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T2w_paths.json', 'r') as openfile:
+        t1_json = json.load(openfile)
 
-    test_labels = label_json["test"]
-    test_images = image_json["test"]
+    # test_labels = label_json["test"]
+    # test_images = image_json["test"]
+    test_labels = t1_json["test"]
+    test_images = t2_json["test"]
 
     # zip the test data into a dictionary form
     test_files = [
