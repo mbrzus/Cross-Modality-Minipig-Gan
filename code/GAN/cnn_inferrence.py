@@ -40,6 +40,7 @@ from monai.transforms import (
     ToTensord,
     ThresholdIntensityd
 )
+from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d
 
 
 class BrainExtraction(pl.LightningModule):
@@ -73,13 +74,13 @@ if __name__ == "__main__":
     # # set up loggers and checkpoints
     # checkpoints_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
 
-    # checkpoints_dir = "/Shared/sinapse/aml"
+    checkpoints_dir = "/Shared/sinapse/aml"
 
     # define model and load its parameters
     model = BrainExtraction.load_from_checkpoint(
-        # checkpoint_path=f"/Shared/sinapse/aml/gen_epoch=0-g_loss=0.00-d_loss=0.00.ckpt",
-        checkpoint_path=f"/Shared/sinapse/checkpoint.ckpt",
-        hparams_file=f"/Shared/sinapse/aml/hparams.yaml",
+        checkpoint_path=f"{checkpoints_dir}/gen_epoch=0-g_loss=0.00-d_loss=0.00.ckpt",
+        # checkpoint_path=f"/Shared/sinapse/checkpoint.ckpt",
+        hparams_file=f"{checkpoints_dir}/hparams.yaml",
         strict=False
         # checkpoint_path=f"{checkpoints_dir}/minipig_3mm.ckpt",
         # hparams_file=f"{checkpoints_dir}/hparams.yaml"
@@ -90,8 +91,8 @@ if __name__ == "__main__":
 
     # define path for inference and the MONAI savers
     # inferrence_dir = "/Shared/sinapse/cjohnson/CNN/inferred_test_images/minipig_3mm"
-    # inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
-    inferrence_dir = "/Shared/sinapse/aml"
+    inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
+    # inferrence_dir = "/Shared/sinapse/aml"
     saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="")
     saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/label", output_postfix="")
     saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_label", output_postfix="")
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
         t1_json = json.load(openfile)
     with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T2w_paths.json', 'r') as openfile:
-        t1_json = json.load(openfile)
+        t2_json = json.load(openfile)
 
     # test_labels = label_json["test"]
     # test_images = image_json["test"]
@@ -119,6 +120,26 @@ if __name__ == "__main__":
     test_files = test_files[:1] # for testing use just 1 image
 
     # define transforms for the data
+    # transforms = Compose(
+    #     [
+    #         LoadImaged(keys=["image", "label"]),
+    #         AddChanneld(keys=["image", "label"]),
+    #         Orientationd(keys=["image", "label"], axcodes="RAS"),
+    #         ThresholdIntensityd(keys=["label"], threshold=1, above=False, cval=1),
+    #         Spacingd(keys=["image", "label"], pixdim=(3, 3, 3), mode=("bilinear", "nearest")),
+    #         ResizeWithPadOrCropd(keys=["image", "label"], spatial_size=[96, 96, 96]),
+    #         ScaleIntensityRangePercentilesd(
+    #             keys=["image"],
+    #             lower=1.0,
+    #             upper=99.0,
+    #             b_min=-1.0,
+    #             b_max=1.0,
+    #             clip=True,
+    #             relative=False,
+    #         ),
+    #         ToTensord(keys=["image", "label"]),
+    #     ]
+    # )
     transforms = Compose(
         [
             LoadImaged(keys=["image", "label"]),
@@ -168,19 +189,19 @@ if __name__ == "__main__":
         out_meta_dict['filename_or_obj'] = out_meta_dict['filename_or_obj'].replace('T1w', 'predicted')
         saver_predicted.save(data=out_im, meta_data=out_meta_dict)  # save the predicted label to disk
 
-        # Prediction evaluation - metrics
+        # # Prediction evaluation - metrics
         print(test_output) #TODO: analyze the intensity values of the one hot inferrence output
-        # create one hot encoding from the ground truth label
-        one_hot_label = one_hot(item["label"].unsqueeze(dim=0), 2, dim=1)
+        # # create one hot encoding from the ground truth label
+        # one_hot_label = one_hot(item["label"].unsqueeze(dim=0), 2, dim=1)
 
-        # Run Mean Dice and Hausdorff Distance metrics using 2 different ways
-        mean_dice = compute_meandice(test_output.detach().cpu(), one_hot_label)
-        mean_dice2 = dice(test_output.detach().cpu(), one_hot_label)
-        hausdorff = compute_hausdorff_distance(test_output.detach().cpu(), one_hot_label)
-        hausdorff2 = hausdorff_distance(test_output.detach().cpu(), one_hot_label)
-        # print the results
-        print(item['image_meta_dict']['filename_or_obj'])
-        print(f"Mean Dice: {mean_dice}")
-        print(f"Mean Dice: {mean_dice2}")
-        print(f"Hausdorff Distance: {hausdorff}")
-        print(f"Hausdorff Distance: {hausdorff2}")
+        # # Run Mean Dice and Hausdorff Distance metrics using 2 different ways
+        # mean_dice = compute_meandice(test_output.detach().cpu(), one_hot_label)
+        # mean_dice2 = dice(test_output.detach().cpu(), one_hot_label)
+        # hausdorff = compute_hausdorff_distance(test_output.detach().cpu(), one_hot_label)
+        # hausdorff2 = hausdorff_distance(test_output.detach().cpu(), one_hot_label)
+        # # print the results
+        # print(item['image_meta_dict']['filename_or_obj'])
+        # print(f"Mean Dice: {mean_dice}")
+        # print(f"Mean Dice: {mean_dice2}")
+        # print(f"Hausdorff Distance: {hausdorff}")
+        # print(f"Hausdorff Distance: {hausdorff2}")
