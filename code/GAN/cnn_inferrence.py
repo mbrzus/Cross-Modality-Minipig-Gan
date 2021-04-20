@@ -65,50 +65,31 @@ class BrainExtraction(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    # define path to trained model parameters
-    # checkpoints_dir = "/Shared/sinapse/cjohnson/CNN/logs"
-    # params_dir = "/Shared/sinapse/cjohnson/CNN/logs/default/minipig_3mm"
-
-    # root_dir = str(Path(".").absolute().parent)  # use relative path
-
-    # # set up loggers and checkpoints
-    # checkpoints_dir = os.path.join(root_dir, "GAN/casnet-gen_michal-disc")
 
     checkpoints_dir = "/Shared/sinapse/aml"
 
     # define model and load its parameters
     model = BrainExtraction.load_from_checkpoint(
         checkpoint_path=f"{checkpoints_dir}/gen_epoch=0-g_loss=0.00-d_loss=0.00.ckpt",
-        # checkpoint_path=f"/Shared/sinapse/checkpoint.ckpt",
         hparams_file=f"{checkpoints_dir}/hparams.yaml",
         strict=False
-        # checkpoint_path=f"{checkpoints_dir}/minipig_3mm.ckpt",
-        # hparams_file=f"{checkpoints_dir}/hparams.yaml"
-        # hparams_file=f"{params_dir}/hparams.yaml"
     )
     device = torch.device("cuda:0")
     model.to(device)
 
     # define path for inference and the MONAI savers
-    # inferrence_dir = "/Shared/sinapse/cjohnson/CNN/inferred_test_images/minipig_3mm"
     inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
-    # inferrence_dir = "/Shared/sinapse/aml"
     saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="")
-    saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/label", output_postfix="")
-    saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_label", output_postfix="")
+    saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/t2w", output_postfix="")
+    saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_t2w", output_postfix="")
 
     # load the test data
-    # with open('../metadata/minipig_label_paths.json', 'r') as openfile:
-    #     label_json = json.load(openfile)
-    # with open('../metadata/minipig_image_paths.json', 'r') as openfile:
-    #     image_json = json.load(openfile)
     with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
         t1_json = json.load(openfile)
     with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T2w_paths.json', 'r') as openfile:
         t2_json = json.load(openfile)
 
-    # test_labels = label_json["test"]
-    # test_images = image_json["test"]
+
     test_labels = t1_json["test"]
     test_images = t2_json["test"]
 
@@ -171,6 +152,7 @@ if __name__ == "__main__":
     # Loop to accessed images after transformations
     for i in range(1): #range(len(test_images)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
+        print(item)
         # save the t1w and label image
         saver_t1w.save(data=item['image'], meta_data=item['image_meta_dict'])
         saver_label.save(data=item['label'], meta_data=item['label_meta_dict'])
