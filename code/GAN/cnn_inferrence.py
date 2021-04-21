@@ -66,12 +66,12 @@ class BrainExtraction(pl.LightningModule):
 
 if __name__ == "__main__":
 
-    checkpoints_dir = "/Shared/sinapse/aml"
+    checkpoints_dir = "/Shared/sinapse/aml/incorrect-resampler/casnet-gen_patchgan-disc"
 
     # define model and load its parameters
     model = BrainExtraction.load_from_checkpoint(
-        checkpoint_path=f"{checkpoints_dir}/gen_epoch=0-g_loss=0.00-d_loss=0.00.ckpt",
-        hparams_file=f"{checkpoints_dir}/hparams.yaml",
+        checkpoint_path=f"{checkpoints_dir}/gen_epoch=0-g_loss=100.08-g_recon_loss=0.08-d_loss=45.00.ckpt",
+        hparams_file=f"{checkpoints_dir}/default/version_0/hparams.yaml",
         strict=False
     )
     device = torch.device("cuda:0")
@@ -79,9 +79,9 @@ if __name__ == "__main__":
 
     # define path for inference and the MONAI savers
     inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
-    saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="")
-    saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/t2w", output_postfix="")
-    saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_t2w", output_postfix="")
+    saver_t1w = NiftiSaver(output_dir=f"{inferrence_dir}/t1w", output_postfix="_inputT1")
+    saver_label = NiftiSaver(output_dir=f"{inferrence_dir}/t2w", output_postfix="_label")
+    saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_t2w", output_postfix="predicted")
 
     # load the test data
     with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         {"image": image_name, "label": label_name}
         for image_name, label_name in zip(test_images, test_labels)
     ]
-    test_files = test_files[:1] # for testing use just 1 image
+    test_files = test_files[:3] # for testing use just 1 image
 
     # define transforms for the data
     # transforms = Compose(
