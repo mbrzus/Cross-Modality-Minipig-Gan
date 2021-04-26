@@ -137,14 +137,27 @@ class ResampleT1T2d(MapTransform):
         # resampled_t2w = resampler.GetOutput()
         # print("starting functional resample")
 
-
+        required_size_mm = 256
         reference_image = type(t1w_itk_image).New()
-        reference_image.SetOrigin(t1w_itk_image.GetOrigin())
-        reference_image.SetSpacing(output_spacing)
+        reference_image.SetOrigin(-np.array(self.output_size)/2) # change origin
+        reference_image.SetSpacing(required_size_mm / np.array(self.output_size))
         reference_image.SetDirection(identity_direction)
         region = reference_image.GetLargestPossibleRegion()
         region.SetSize(self.output_size)
         reference_image.SetLargestPossibleRegion(region)
+
+        # re-evaluate resampling method
+        # 256 mm isotropic
+        # output origin = center of physical space - 127.5 mm iso
+        # brains abc has max size of human brain (mm)
+
+        # new resample
+        # know ac is at 0,0,0
+        # sample a 256^3 1mm isotropic grid w/ orign at -127.5,-127.5,-127.5
+        # identity direction 
+        # identity transform
+        # only works on ACPC aligned data
+
 
 
         # print("running resample")
@@ -153,17 +166,24 @@ class ResampleT1T2d(MapTransform):
             transform=self.identity_transform,
             interpolator=self.linear_interpolator,
             reference_image=reference_image,
-            use_reference_image=True
+            use_reference_image=True,
+            number_of_work_units=1
         )
-
+        # resampler.SetNumWorkUnits(1)
+        # object oriented version
         
         d[self.t2w_key] = itk.resample_image_filter(
             d[self.t2w_key],
             transform=self.identity_transform,
             interpolator=self.linear_interpolator,
             reference_image=reference_image,
-            use_reference_image=True
+            use_reference_image=True,
+            number_of_work_units=1 # converts to SetNumWorkUnits
+
+            # set num workers
         )
+        # print("done resample")
+
 
 
         # resampled = itk.resample_image_filter(d[self.t1w_key],

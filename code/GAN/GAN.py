@@ -45,8 +45,10 @@ from monai.transforms import (
 )
 from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
-from monai.visualize.img2tensorboard import plot_2d_or_3d_image
+from monai.visualize.img2tensorboard import plot_2d_or_3d_image, add_animated_gif
 
+import itk
+itk.MultiThreaderBase.SetGlobalDefaultNumberOfThreads(1)
 # TODO: Alex, I commented the data module and the main function. The HumanData... module should be done. The main function
 # probably will need adjustment to the data visualization (last loop at the very end) but the logger trainer and all of that should be ready
 # I copied and pasted the Generator, Discriminator and GAN from the lightning example but it still need to be changed
@@ -188,8 +190,8 @@ class CustomDataLoader(object):
         starting_index = self.curr_index
         while self.curr_index < starting_index + self.batch_size:
             # print(starting_index, self.curr_index)
-            t1w_batch.append(self.dataset.__getitem__(self.curr_index)["t1w"])
-            t2w_batch.append(self.dataset.__getitem__(self.curr_index)["t2w"])
+            t1w_batch.append(self.dataset.__getitem__(self.curr_index)["t1w"].unsqueeze(0))
+            t2w_batch.append(self.dataset.__getitem__(self.curr_index)["t2w"].unsqueeze(0))
             self.curr_index = self.curr_index + 1
 
         t1w_batch = torch.cat(t1w_batch, dim=0)
@@ -229,6 +231,7 @@ class GAN(pl.LightningModule):
         ])
 
         self.example_input_array = example_data["t1w"].unsqueeze(dim=0)
+        # print(self.example_input_array, type(self.example_input_array), self.example_input_array.shape)
 
     def forward(self, x):
         # print("Gan forward")
@@ -242,8 +245,8 @@ class GAN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
-        t1w_images = t1w_images.unsqueeze(dim=1)
-        t2w_images = t2w_images.unsqueeze(dim=1)
+        # t1w_images = t1w_images.unsqueeze(dim=1)
+        # t2w_images = t2w_images.unsqueeze(dim=1)
         # print(t1w_images.shape)
         # print(t2w_images.shape)
 
@@ -328,7 +331,10 @@ class GAN(pl.LightningModule):
     def on_epoch_end(self):
         input_data = self.example_input_array.type_as(self.discriminator.model_conv[0].weight)
         # log sampled images -- just logs from the last batch run
-        plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
+        # print("inputdata", type(input_data), input_data.shape)
+        add_animated_gif(writer=self.logger.experiment, tag="generate_t2w", image_tensor=self(input_data).detach().cpu()[0], max_out=300, scale_factor=255, global_step=self.current_epoch)
+
+        # plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
 
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
@@ -388,9 +394,10 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # TODO: look at splitting these for different training phases
 
 
-        train_files = train_files[:20]
-        # val_files = val_files[:1]
-        test_files = test_files[:1]
+        # train_files = train_files[:1000]
+        # # val_files = val_files[:1]
+        # test_files = test_files[:1]
+
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -418,7 +425,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
             data=train_files,
             transform=transforms,
             cache_num=500,
-            num_workers=8,
+            num_workers=16,
         )
         # self.val_dataset = CacheDataset(
         #     data=val_files,
@@ -435,9 +442,11 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=1, shuffle=True, num_workers=8
+            self.train_dataset, batch_size=5, shuffle=False, num_workers=5 # single threaded -- works
+            # 4 
         )
-        return CustomDataLoader(self.train_dataset, batch_size=5)
+        return train_loader
+        # return CustomDataLoader(self.train_dataset, batch_size=5)
         # return iter(self.train_dataset)
 
     # def val_dataloader(self):
@@ -448,32 +457,42 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         test_loader = torch.utils.data.DataLoader(
-            self.test_dataset, batch_size=1, num_workers=1
+            self.test_dataset, batch_size=1, num_workers=4
         )
-        return CustomDataLoader(self.test_dataset, batch_size=5)
+        return test_loader
+        # return CustomDataLoader(self.test_dataset, batch_size=5)
         # return iter(self.test_dataset)
 
 
 if __name__ == "__main__":
     print_config()
-    root_dir = str(Path(".").absolute().parent)  # use relative path
+    root_dir = str(Path("/Shared/sinapse/aml/correct-resampler").absolute())  # use relative path
 
     # set up loggers and checkpoints
-    log_dir = os.path.join(root_dir, "GAN/casnet-gen_patchgan-disc")
+    log_dir = os.path.join(root_dir, "casnet-gen_patchgan-disc")
     tb_logger = pl.loggers.TensorBoardLogger(save_dir=log_dir)
     # TODO: find a good metric for determining the best model to checkpoint (naive using g_loss for now)
     generator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
-        filename="gen_{epoch}-{g_loss:.2f}-{d_loss:.2f}",
+        filename="gen_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
         save_top_k=1,
         verbose=True,
         monitor="g_loss_step",
         mode="min",
     )
 
+    generator_recon_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+        dirpath=log_dir,
+        filename="gen_recon_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
+        save_top_k=1,
+        verbose=True,
+        monitor="g_recon_loss_step",
+        mode="min",
+    )
+
     discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
-        filename="dis_{epoch}-{g_loss:.2f}-{d_loss:.2f}",
+        filename="dis_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
         save_top_k=1,
         verbose=True,
         monitor="d_loss_step",
@@ -490,7 +509,7 @@ if __name__ == "__main__":
         gpus=[3],
         max_epochs=1000,
         logger=tb_logger,
-        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback],
+        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback, generator_recon_checkpoint_callback],
         accelerator='dp'
         # precision=16
         # amp_backend='apex',
