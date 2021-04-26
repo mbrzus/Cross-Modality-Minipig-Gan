@@ -1,5 +1,6 @@
 import itk
 import numpy as np
+from pathlib import Path
 
 
 class LoadITKImaged(object):
@@ -130,4 +131,37 @@ class ResampleT1T2d(object):
         
         d[self.t1w_key] = resampled_t1w
         d[self.t2w_key] = resampled_t2w
+        return d
+
+class SaveITKImaged(object):
+    def __init__(self, keys, out_dir, output_postfix="inf"):
+        self.keys = keys
+        self.postfix = output_postfix
+        self.out_dir = out_dir
+    def __call__(self, data):
+        d = dict(data)
+        for k in self.keys:
+            input_filename = Path(d[f"{k}_meta_dict"]["filename"]).absolute()
+            parent_dir = input_filename.parent
+            basename = str(input_filename.name).split('.')[0]
+            extension = '.'.join(str(input_filename).split('.')[-2:])
+            output_filename = f"{self.out_dir}/{basename}_{self.postfix}.{extension}"
+            print("writing to", output_filename)
+            itk.imwrite(d[k], output_filename)
+            pass
+        return d
+
+class ToITKImaged(object):
+    def __init__(self, keys):
+        self.keys = keys
+        pass
+    def __call__(self, data):
+        d = dict(data)
+        for k in self.keys:
+            meta_data = d[f"{k}_meta_dict"]
+            itk_image = itk.image_from_array(d[k])
+            itk_image.SetOrigin(meta_data["origin"])
+            itk_image.SetSpacing(meta_data["spacing"])
+            itk_image.SetDirection(meta_data["direction"])
+            d[k] = itk_image
         return d
