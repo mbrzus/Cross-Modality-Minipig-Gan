@@ -48,7 +48,7 @@ import torch.nn as nn
 class CasNetGenerator(pl.LightningModule):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=6 # The MEDGAN paper had the best results with 6 unet blocks
+        self, img_shape, n_unet_blocks=3 # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -56,8 +56,9 @@ class CasNetGenerator(pl.LightningModule):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(16, 32, 64, 128),#, 512),
-            strides=(2, 2, 2),#, 2),
+            channels=(64, 128, 256, 512, 512),#, 512),
+            strides=(2, 2, 2, 2, 2),#, 2),
+
             # channels=(16, 32, 64, 128),
             # strides=(2, 2, 2),
         ):
@@ -77,7 +78,7 @@ class CasNetGenerator(pl.LightningModule):
         self.model = nn.Sequential(*u_net_list)
 
     def forward(self, x):
-        print("Generator forward")
+        # print("Generator forward")
         return self.model(x)
 
 
@@ -138,22 +139,13 @@ if __name__ == "__main__":
         ]
     )
 
-    
-
     # create a test dataset with the preprocessed images
     test_dataset = CacheDataset(data=test_files, transform=transforms, cache_rate=1.0, num_workers=4)
-
-    # define matric classes
-    dice = DiceMetric()
-    hausdorff_distance = HausdorffDistanceMetric()
 
     # Loop to accessed images after transformations
     for i in range(1): #range(len(test_T2s)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
         print(item.keys())
-        # save the t1w and label image
-        # saver_t1w.save(data=item['t1w'], meta_data=item['T1_meta_dict'])
-        # saver_label.save(data=item['t2w'], meta_data=item['T2_meta_dict'])
 
         # perform the inference
         with torch.no_grad():
@@ -165,46 +157,22 @@ if __name__ == "__main__":
             # out_im = torch.argmax(test_output, dim=1).detach().cpu() # convert from one hot encoding to 1 dimensional
         # test_output = test_output.numpy()
         print(f"test_output.shape(): {test_output.size()}")
-        # output_dict = {
-        #     "generated_t2w": test_output,
-        #     "truth_t2w": item['t2w']
-        # }
-
+        print("\n\n")
+        print(item['t2w'].size())
         item['t2w_generated'] = test_output.squeeze(dim=0).squeeze(dim=0)
-        item['t2w'] = item['t2w'].squeeze(dim=0).squeeze(dim=0)
+        item['t2w'] = item['t2w'].squeeze(dim=0)
         item['t2w_generated_meta_dict'] = item['t1w_meta_dict']
         item['t2w_generated_meta_dict']['filename'] = "t2_inferred.nii.gz"
         item['t2w_meta_dict']['filename'] = "t2_truth.nii.gz"
         
 
         print(item.keys())
-        print(item['t2w_generated_meta_dict'])
+        #print(item['t2w_generated_meta_dict'])
         out_transforms = Compose([
             ToNumpyd(keys=["t2w_generated", "t2w"]),
             ToITKImaged(keys=["t2w_generated", "t2w"]),
-            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="inferred")
+            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="inferred_new")
         ])
 
         out_transforms(item)
 
-        # create a metadata dictionary for the output by manipulating the input image meta data
-        # out_meta_dict = item['T1_meta_dict']
-        # out_meta_dict['filename_or_obj'] = out_meta_dict['filename_or_obj'].replace('T1w', 'predicted')
-        # saver_predicted.save(data=out_im, meta_data=out_meta_dict)  # save the predicted label to disk
-
-        # # # Prediction evaluation - metrics
-        # print(test_output) #TODO: analyze the intensity values of the one hot inferrence output
-        # # create one hot encoding from the ground truth label
-        # one_hot_label = one_hot(item['t2w'].unsqueeze(dim=0), 2, dim=1)
-
-        # # Run Mean Dice and Hausdorff Distance metrics using 2 different ways
-        # mean_dice = compute_meandice(test_output.detach().cpu(), one_hot_label)
-        # mean_dice2 = dice(test_output.detach().cpu(), one_hot_label)
-        # hausdorff = compute_hausdorff_distance(test_output.detach().cpu(), one_hot_label)
-        # hausdorff2 = hausdorff_distance(test_output.detach().cpu(), one_hot_label)
-        # # print the results
-        # print(item['T1_meta_dict']['filename_or_obj'])
-        # print(f"Mean Dice: {mean_dice}")
-        # print(f"Mean Dice: {mean_dice2}")
-        # print(f"Hausdorff Distance: {hausdorff}")
-        # print(f"Hausdorff Distance: {hausdorff2}")
