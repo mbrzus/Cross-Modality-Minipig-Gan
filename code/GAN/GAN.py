@@ -48,6 +48,7 @@ from torch.utils.data import DataLoader, random_split
 from monai.visualize.img2tensorboard import plot_2d_or_3d_image, add_animated_gif
 
 import itk
+
 itk.MultiThreaderBase.SetGlobalDefaultNumberOfThreads(1)
 # TODO: Alex, I commented the data module and the main function. The HumanData... module should be done. The main function
 # probably will need adjustment to the data visualization (last loop at the very end) but the logger trainer and all of that should be ready
@@ -94,7 +95,9 @@ itk.MultiThreaderBase.SetGlobalDefaultNumberOfThreads(1)
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-        self, img_shape, n_unet_blocks=3 # The MEDGAN paper had the best results with 6 unet blocks
+        self,
+        img_shape,
+        n_unet_blocks=3,  # The MEDGAN paper had the best results with 6 unet blocks
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
@@ -102,8 +105,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(64, 128, 256, 512, 512),#, 512),
-            strides=(2, 2, 2, 2, 2),#, 2),
+            channels=(64, 128, 256, 512, 512),  # , 512),
+            strides=(2, 2, 2, 2, 2),  # , 2),
             # channels=(16, 32, 64, 128),
             # strides=(2, 2, 2),
         ):
@@ -130,43 +133,64 @@ class CasNetGenerator(nn.Module):
 # TODO: look at using Markovian discriminator (PatchGAN) from: https://arxiv.org/pdf/1611.07004.pdf
 # TODO: improve discriminator by adding convolutional layers
 
-class Discriminator(nn.Module):
-    def __init__(self, img_shape):
-        super().__init__()
 
+class Discriminator(nn.Module):
+    def __init__(self, img_shape, use_perceptual=True):
+        super().__init__()
+        self.use_perceptual = use_perceptual
         kernel = (3, 3, 3)
         stride = (1, 1, 1)
         self.model_conv = nn.Sequential(
             # Block 1
-            nn.Conv3d(in_channels=1, out_channels=64, kernel_size=kernel, stride=stride),
+            nn.Conv3d(
+                in_channels=1, out_channels=64, kernel_size=kernel, stride=stride
+            ),
             nn.BatchNorm3d(64),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 2
-            nn.Conv3d(in_channels=64, out_channels=128, kernel_size=kernel, stride=stride),
+            nn.Conv3d(
+                in_channels=64, out_channels=128, kernel_size=kernel, stride=stride
+            ),
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=kernel, stride=stride),
+            nn.Conv3d(
+                in_channels=128, out_channels=256, kernel_size=kernel, stride=stride
+            ),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=kernel, stride=stride),
+            nn.Conv3d(
+                in_channels=256, out_channels=512, kernel_size=kernel, stride=stride
+            ),
             nn.BatchNorm3d(512),
-            nn.LeakyReLU(0.2, inplace=True)
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
         self.model_linear = nn.Sequential(
             # Sigmoid
             nn.Flatten(),
             nn.Linear(512 * 24 * 24 * 24, 1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
-        
-    def forward(self, img):
-        # print("Discriminator forward")
-        out = self.model_conv(img)
-        validity = self.model_linear(out)
-        return validity
+
+    def forward(self, x):
+        perceptual_dict = {}
+        index = 0
+        for module in self.model_conv:
+            x = module(x)
+            if self.use_perceptual:
+                perceptual_dict[index] = x.clone()
+                index = index + 1
+
+        for module in self.model_linear:
+            x = module(x)
+            if self.use_perceptual:
+                perceptual_dict[index] = x.clone()
+                index = index + 1
+
+        return x, perceptual_dict
+
 
 # custom data iterator (HACKITY HACKING HACK)
 # ONLY WORKS FOR THIS PROJECT DO NOT DUPLICATE
@@ -184,19 +208,24 @@ class CustomDataLoader(object):
     def __next__(self):
         if self.curr_index + self.batch_size > self.n_elems:
             self.curr_index = 0
-        
+
         t1w_batch = []
         t2w_batch = []
         starting_index = self.curr_index
         while self.curr_index < starting_index + self.batch_size:
             # print(starting_index, self.curr_index)
-            t1w_batch.append(self.dataset.__getitem__(self.curr_index)["t1w"].unsqueeze(0))
-            t2w_batch.append(self.dataset.__getitem__(self.curr_index)["t2w"].unsqueeze(0))
+            t1w_batch.append(
+                self.dataset.__getitem__(self.curr_index)["t1w"].unsqueeze(0)
+            )
+            t2w_batch.append(
+                self.dataset.__getitem__(self.curr_index)["t2w"].unsqueeze(0)
+            )
             self.curr_index = self.curr_index + 1
 
         t1w_batch = torch.cat(t1w_batch, dim=0)
         t2w_batch = torch.cat(t2w_batch, dim=0)
-        return {"t1w":t1w_batch, "t2w":t2w_batch}
+        return {"t1w": t1w_batch, "t2w": t2w_batch}
+
 
 class GAN(pl.LightningModule):
     # note: i don't think we need a latenet dim? -- isn't the t1w image just the latent space?
@@ -216,19 +245,25 @@ class GAN(pl.LightningModule):
         **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters("latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value")
+        self.save_hyperparameters(
+            "latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value"
+        )
 
         # networks
         data_shape = (channels, width, height, depth)
         self.generator = CasNetGenerator(img_shape=data_shape)
         self.discriminator = Discriminator(img_shape=data_shape)
 
-        self.patch_transform = Compose([
-            RandSpatialCropSamplesd(keys=["t2", "t2_gt"],
-                                    roi_size=(32, 32, 32),
-                                    num_samples=4,
-                                    random_size=False)
-        ])
+        self.patch_transform = Compose(
+            [
+                RandSpatialCropSamplesd(
+                    keys=["t2", "t2_gt"],
+                    roi_size=(32, 32, 32),
+                    num_samples=4,
+                    random_size=False,
+                )
+            ]
+        )
 
         self.example_input_array = example_data["t1w"].unsqueeze(dim=0)
         # print(self.example_input_array, type(self.example_input_array), self.example_input_array.shape)
@@ -239,9 +274,22 @@ class GAN(pl.LightningModule):
 
     def adversarial_loss(self, y_hat, y):
         return F.binary_cross_entropy(y_hat, y)
-    
+
     def reconstruction_loss(self, y_hat, y):
         return F.l1_loss(y_hat, y)
+
+    # TODO: add layer lambdas
+    def perceptual_loss(self, y_hat_activations, y_activations):
+        assert set(y_activations.keys()) == set(y_hat_activations.keys())
+
+        running_sum = torch.Tensor([0]).type_as(y_hat_activations[0])
+        for key in y_activations.keys():
+            layer_contribution = (
+                F.l1_loss(y_activations[key], y_hat_activations[key])
+                / y_activations[key].numel()
+            )
+            running_sum = running_sum + layer_contribution
+        return running_sum
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         t1w_images, t2w_images = batch["t1w"], batch["t2w"]
@@ -267,12 +315,20 @@ class GAN(pl.LightningModule):
 
         # organize all the patches to create new t2 generated and t2 ground truth batches
         t2_generated_batch = torch.cat(
-            [torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-            dim=0)
+            [
+                torch.cat([d["t2"].unsqueeze(0) for d in sub_patch], dim=0)
+                for sub_patch in patch_data
+            ],
+            dim=0,
+        )
 
         t2_ground_truth_batch = torch.cat(
-            [torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0) for sub_patch in patch_data],
-            dim=0)
+            [
+                torch.cat([d["t2_gt"].unsqueeze(0) for d in sub_patch], dim=0)
+                for sub_patch in patch_data
+            ],
+            dim=0,
+        )
 
         # train generator
         if optimizer_idx == 0:
@@ -284,14 +340,57 @@ class GAN(pl.LightningModule):
             valid = torch.ones(t2_ground_truth_batch.shape[0], 1)
             valid = valid.type_as(t2_ground_truth_batch)
 
+            disc_output_fake, disc_activations_fake = self.discriminator(
+                t2_generated_batch
+            )
+            _, disc_activations_real = self.discriminator(t2_ground_truth_batch)
+            # minimize difference in the activations
+            g_perceptual_loss = self.perceptual_loss(
+                disc_activations_fake, disc_activations_real
+            )
+            self.log(
+                "g_perceptual_loss",
+                g_perceptual_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
+
             # adversarial loss is binary cross-entropy
-            g_adv_loss = self.adversarial_loss(self.discriminator(t2_generated_batch), valid)
-            self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-            g_recon_loss = self.reconstruction_loss(t2_generated_batch, t2_ground_truth_batch)
-            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True,
-                     sync_dist=True)
-            g_loss = g_adv_loss + g_recon_loss
-            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            g_adv_loss = self.adversarial_loss(disc_output_fake, valid)
+            self.log(
+                "g_adv_loss",
+                g_adv_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
+            g_recon_loss = self.reconstruction_loss(
+                t2_generated_batch, t2_ground_truth_batch
+            )
+            self.log(
+                "g_recon_loss",
+                g_recon_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
+            g_loss = g_adv_loss + g_recon_loss + g_perceptual_loss
+            self.log(
+                "g_loss",
+                g_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
 
             return g_loss
 
@@ -301,22 +400,35 @@ class GAN(pl.LightningModule):
             # Measure discriminator's ability to classify real from generated samples
 
             # how well can it label as real?
-            valid = torch.ones(t2_ground_truth_batch.shape[0], 1) * self.hparams.one_sided_label_value
+            valid = (
+                torch.ones(t2_ground_truth_batch.shape[0], 1)
+                * self.hparams.one_sided_label_value
+            )
             valid = valid.type_as(t2_ground_truth_batch)
 
-            real_loss = self.adversarial_loss(self.discriminator(t2_ground_truth_batch), valid)
+            real_loss = self.adversarial_loss(
+                self.discriminator(t2_ground_truth_batch)[0], valid
+            )
 
             # how well can it label as fake? --> how well the discriminator detects fake data
             fake = torch.zeros(t2_generated_batch.shape[0], 1)
             fake = fake.type_as(t2_generated_batch)
 
             fake_loss = self.adversarial_loss(
-                self.discriminator(t2_generated_batch), fake
+                self.discriminator(t2_generated_batch)[0], fake
             )
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
-            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log(
+                "d_loss",
+                d_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
             return d_loss
 
     def configure_optimizers(self):
@@ -329,10 +441,19 @@ class GAN(pl.LightningModule):
         return [opt_g, opt_d], []
 
     def on_epoch_end(self):
-        input_data = self.example_input_array.type_as(self.discriminator.model_conv[0].weight)
+        input_data = self.example_input_array.type_as(
+            self.discriminator.model_conv[0].weight
+        )
         # log sampled images -- just logs from the last batch run
         # print("inputdata", type(input_data), input_data.shape)
-        add_animated_gif(writer=self.logger.experiment, tag="generate_t2w", image_tensor=self(input_data).detach().cpu()[0], max_out=300, scale_factor=255, global_step=self.current_epoch)
+        add_animated_gif(
+            writer=self.logger.experiment,
+            tag="generate_t2w",
+            image_tensor=self(input_data).detach().cpu()[0],
+            max_out=300,
+            scale_factor=255,
+            global_step=self.current_epoch,
+        )
 
         # plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
 
@@ -393,11 +514,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-
-        # train_files = train_files[:1000]
+        # train_files = train_files[:50]
         # # val_files = val_files[:1]
         # test_files = test_files[:1]
-
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -442,8 +561,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=5, shuffle=False, num_workers=5 # single threaded -- works
-            # 4 
+            self.train_dataset, batch_size=1, shuffle=False, num_workers=5
         )
         return train_loader
         # return CustomDataLoader(self.train_dataset, batch_size=5)
@@ -466,7 +584,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
 if __name__ == "__main__":
     print_config()
-    root_dir = str(Path("/Shared/sinapse/aml/correct-resampler").absolute())  # use relative path
+    root_dir = str(
+        Path("/Shared/sinapse/aml/perceptual-test").absolute()
+    )  # use relative path
 
     # set up loggers and checkpoints
     log_dir = os.path.join(root_dir, "casnet-gen_patchgan-disc")
@@ -490,6 +610,15 @@ if __name__ == "__main__":
         mode="min",
     )
 
+    generator_percep_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+        dirpath=log_dir,
+        filename="gen_percep_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{g_perceptual_loss:.2f}-{d_loss:.2f}",
+        save_top_k=1,
+        verbose=True,
+        monitor="g_perceptual_loss_step",
+        mode="min",
+    )
+
     discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
         filename="dis_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
@@ -506,11 +635,16 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[3],
+        gpus=[0],
         max_epochs=1000,
         logger=tb_logger,
-        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback, generator_recon_checkpoint_callback],
-        accelerator='dp'
+        callbacks=[
+            generator_checkpoint_callback,
+            discriminator_checkpoint_callback,
+            generator_recon_checkpoint_callback,
+            generator_percep_checkpoint_callback,
+        ],
+        accelerator="dp"
         # precision=16
         # amp_backend='apex',
         # amp_level='O3'
@@ -525,5 +659,3 @@ if __name__ == "__main__":
     trainer.fit(model)
 
     print("--- %s seconds ---" % (time.time() - start_time))
-
-   
