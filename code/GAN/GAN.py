@@ -10,7 +10,7 @@ from pathlib import Path
 
 from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d
 
-import apex
+# import apex
 import matplotlib.pyplot as plt
 import numpy as np
 import pytorch_lightning as pl
@@ -521,9 +521,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-        train_files = train_files[:20]
+        # train_files = train_files[:20]
         # val_files = val_files[:1]
-        test_files = test_files[:1]
+        # test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -642,7 +642,7 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[0],
+        gpus=[2],
         max_epochs=1000,
         logger=tb_logger,
         callbacks=[
