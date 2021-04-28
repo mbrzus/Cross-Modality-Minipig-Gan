@@ -165,12 +165,19 @@ class Discriminator(nn.Module):
             ),
             nn.BatchNorm3d(512),
             nn.LeakyReLU(0.2, inplace=True),
+            # Block 5
+            nn.Conv3d(
+                in_channels=512, out_channels=1024, kernel_size=kernel, stride=stride
+            ),
+            nn.BatchNorm3d(1024),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
         self.model_linear = nn.Sequential(
             # Sigmoid
             nn.Flatten(),
-            nn.Linear(512 * 24 * 24 * 24, 1),
+            nn.Linear(1024 * 22 * 22 * 22, 64),
+            nn.Linear(64, 1),
             nn.Sigmoid(),
         )
 
@@ -259,7 +266,7 @@ class GAN(pl.LightningModule):
                 RandSpatialCropSamplesd(
                     keys=["t2", "t2_gt"],
                     roi_size=(32, 32, 32),
-                    num_samples=4,
+                    num_samples=8,
                     random_size=False,
                 )
             ]
@@ -514,9 +521,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-        # train_files = train_files[:50]
-        # # val_files = val_files[:1]
-        # test_files = test_files[:1]
+        train_files = train_files[:20]
+        # val_files = val_files[:1]
+        test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
