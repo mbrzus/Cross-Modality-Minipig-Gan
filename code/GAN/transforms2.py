@@ -80,7 +80,7 @@ class ToITKImaged(object):
         d = dict(data)
         for k in self.keys:
             if torch.is_tensor(d[k]):
-                d[k] = d[k].numpy().astype(np.float32)
+                d[k] = d[k].numpy().astype(np.float16)
             if len(d[k].shape) == 5:
                 d[k] = d[k].squeeze(axis=0).squeeze(axis=0)
             elif len(d[k].shape) == 4:
@@ -219,5 +219,8 @@ class BinaryThresholdd(object):
 
         d[self.label_key] = label
         return d
+
+
+    
 
 

@@ -85,33 +85,12 @@ class CasNetGenerator(pl.LightningModule):
         return self.model(x)
 
 
-if __name__ == "__main__":
-
-    checkpoints_dir = "/Shared/sinapse/aml/perceptual-test/casnet-gen_patchgan-disc"
-
-    # define model and load its parameters
-    model = CasNetGenerator.load_from_checkpoint(
-        checkpoint_path=f"{checkpoints_dir}/gen_epoch=38-g_loss=0.70-g_recon_loss=0.09-d_loss=0.53.ckpt",
-        hparams_file=f"{checkpoints_dir}/default/version_56/hparams.yaml",
-        img_shape=(128, 128, 128),
-        strict=False
-    )
-    device = torch.device("cuda:0")
-    model.to(device)
-
-    # define path for inference and the MONAI savers
-    inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
-
+def get_test_data():
     meta_dir = str(Path(".").absolute().parent / "metadata")
     with open(f"{meta_dir}/structure.json", "r") as openfile:
         structure = json.load(openfile)
 
-    train_structure = structure["train"]
-    # validation_structure = structure["validation"]
-    test_structure = structure["test"]
-
-
-    # zip two arrays into a dictionary form expected by MONAI
+    test_structure = structure["train"]
 
     def structure_to_monai_dict(structure_dict):
         output_list_of_dicts = []
@@ -136,6 +115,28 @@ if __name__ == "__main__":
 
 
     test_files = structure_to_monai_dict(test_structure)
+    return test_files
+
+
+if __name__ == "__main__":
+
+    checkpoints_dir = "/Shared/sinapse/aml/perceptual-test/casnet-gen_patchgan-disc"
+    inferrence_dir = "/Shared/sinapse/cjohnson/inferrence"
+
+    # define model and load its parameters
+    model = CasNetGenerator.load_from_checkpoint(
+        checkpoint_path=f"{checkpoints_dir}/gen_epoch=38-g_loss=0.70-g_recon_loss=0.09-d_loss=0.53.ckpt",
+        hparams_file=f"{checkpoints_dir}/default/version_47/hparams.yaml",
+        img_shape=(128, 128, 128),
+        strict=False
+    )
+    device = torch.device("cuda:0")
+    model.to(device)
+    model.eval()
+    model.freeze()
+
+    # prepare test data
+    test_files = get_test_data()
     test_files = test_files[:1]
 
     # define transforms for the data
@@ -165,31 +166,26 @@ if __name__ == "__main__":
     for i in range(1): #range(len(test_T2s)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
         print(item.keys())
+        print(item['t1w'].size())
+        print(item['t1w'].unsqueeze(dim=0).size())
 
         # perform the inference
         with torch.no_grad():
             roi_size = (128, 128, 128)
-            sw_batch_size = 1
+            sw_batch_size = 12
             test_output = sliding_window_inference(
                 item['t1w'].unsqueeze(dim=0).to(device), roi_size, sw_batch_size, model
             )
-            # out_im = torch.argmax(test_output, dim=1).detach().cpu() # convert from one hot encoding to 1 dimensional
-        # test_output = test_output.numpy()
-        print(f"test_output.shape(): {test_output.size()}")
-        print("\n\n")
-        print(item['t2w'].size())
-        item['t2w_generated'] = test_output.squeeze(dim=0).squeeze(dim=0)
-        item['t2w'] = item['t2w'].squeeze(dim=0)
+
+        item['t2w_generated'] = test_output
         item['t2w_generated_meta_dict'] = item['t1w_meta_dict']
         item['t2w_generated_meta_dict']['filename'] = "t2_inferred.nii.gz"
         item['t2w_meta_dict']['filename'] = "t2_truth.nii.gz"
-        
 
-        print(item.keys())
-        #print(item['t2w_generated_meta_dict'])
         out_transforms = Compose([
             ToNumpyd(keys=["t2w_generated", "t2w"]),
             ToITKImaged(keys=["t2w_generated", "t2w"]),
+            BinaryThresholdd(keys=["t2w"], low=0, high=1, threshold_value=1),
             SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="inferred_new")
         ])
 
