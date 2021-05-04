@@ -8,7 +8,7 @@ from collections import OrderedDict
 from itertools import product as cartesian_product
 from pathlib import Path
 
-from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d
+from transforms import LoadITKImaged, ITKImageToNumpyd, ResampleT1T2d, OldResampleT1T2d
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,6 +41,7 @@ from monai.transforms import (
     ToTensord,
     ScaleIntensityRangePercentilesd,
     Resized,
+    ScaleIntensity
 )
 from monai.utils import set_determinism
 from torch.utils.data import DataLoader, random_split
@@ -242,23 +243,27 @@ class GAN(pl.LightningModule):
         height,
         depth,
         latent_dim: int = 100,
-        lr: float = 0.0002,
+        d_lr: float = 0.001,
+        g_lr: float = 0.0005,
         b1: float = 0.5,
         b2: float = 0.999,
         batch_size: int = 64,
-        example_data: torch.Tensor = None,
+        example_data_test: torch.Tensor = None,
+        example_data_train: torch.Tensor = None,
         one_sided_label_value: int = 0.9,
         **kwargs,
     ):
         super().__init__()
         self.save_hyperparameters(
-            "latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value"
+            "latent_dim", "d_lr", "g_lr", "b1", "b2", "batch_size", "one_sided_label_value"
         )
 
         # networks
         data_shape = (channels, width, height, depth)
         self.generator = CasNetGenerator(img_shape=data_shape)
         self.discriminator = Discriminator(img_shape=data_shape)
+
+        self.post_processor_tfm = ScaleIntensity(minv=0.0, maxv=255)
 
         self.patch_transform = Compose(
             [
@@ -271,7 +276,8 @@ class GAN(pl.LightningModule):
             ]
         )
 
-        self.example_input_array = example_data["t1w"].unsqueeze(dim=0)
+        self.example_data_test = example_data_test["t1w"].unsqueeze(dim=0)
+        self.example_data_train = example_data_train["t1w"].unsqueeze(dim=0)
         # print(self.example_input_array, type(self.example_input_array), self.example_input_array.shape)
 
     def forward(self, x):
@@ -438,30 +444,66 @@ class GAN(pl.LightningModule):
             return d_loss
 
     def configure_optimizers(self):
-        lr = self.hparams.lr
+        d_lr = self.hparams.d_lr
+        g_lr = self.hparams.g_lr
         b1 = self.hparams.b1
         b2 = self.hparams.b2
 
-        opt_g = torch.optim.Adam(self.generator.parameters(), lr=lr, betas=(b1, b2))
-        opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=lr, betas=(b1, b2))
+        opt_g = torch.optim.Adam(self.generator.parameters(), lr=g_lr, betas=(b1, b2))
+        opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=d_lr, betas=(b1, b2))
         return [opt_g, opt_d], []
 
     def on_epoch_end(self):
-        input_data = self.example_input_array.type_as(
+        example_data_test = self.example_data_test.type_as(
+            self.discriminator.model_conv[0].weight
+        )
+
+        example_data_train = self.example_data_train.type_as(
             self.discriminator.model_conv[0].weight
         )
         # log sampled images -- just logs from the last batch run
         # print("inputdata", type(input_data), input_data.shape)
+        image_tensor = self.post_processor_tfm(self(example_data_test).detach().cpu().numpy()[0])
+
         add_animated_gif(
             writer=self.logger.experiment,
-            tag="generate_t2w",
-            image_tensor=self(input_data).detach().cpu()[0],
+            tag="generate_t2w_test",
+            image_tensor=image_tensor,
             max_out=300,
-            scale_factor=255,
+            scale_factor=1,
             global_step=self.current_epoch,
         )
 
-        # plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w')
+        image_tensor = self.post_processor_tfm(self(example_data_train).detach().cpu().numpy()[0])
+
+        add_animated_gif(
+            writer=self.logger.experiment,
+            tag="generate_t2w_train",
+            image_tensor=image_tensor,
+            max_out=300,
+            scale_factor=1,
+            global_step=self.current_epoch,
+        )
+
+        input_tensor = self.post_processor_tfm(example_data_test.cpu().numpy()[0])
+        add_animated_gif(
+            writer=self.logger.experiment,
+            tag="input_t1w_test",
+            image_tensor=input_tensor,
+            max_out=300,
+            scale_factor=1,
+            global_step=self.current_epoch,
+        )
+
+        input_tensor = self.post_processor_tfm(example_data_train.cpu().numpy()[0])
+        add_animated_gif(   
+            writer=self.logger.experiment,
+            tag="input_t1w_train",
+            image_tensor=input_tensor,
+            max_out=300,
+            scale_factor=1,
+            global_step=self.current_epoch,
+        )
 
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
@@ -520,9 +562,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-        #train_files = train_files[:20]
+        train_files = train_files[:20]
         # val_files = val_files[:1]
-        #test_files = test_files[:1]
+        test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -549,8 +591,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
         self.train_dataset = CacheDataset(
             data=train_files,
             transform=transforms,
-            cache_num=500,
-            num_workers=16,
+            cache_num=5,
+            num_workers=1,
         )
         # self.val_dataset = CacheDataset(
         #     data=val_files,
@@ -591,7 +633,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
 if __name__ == "__main__":
     print_config()
     root_dir = str(
-        Path("/Shared/sinapse/aml/perceptual-test").absolute()
+        Path("/Shared/sinapse/aml/abpwrs-viz-fix").absolute()
     )  # use relative path
 
     # set up loggers and checkpoints
@@ -607,24 +649,6 @@ if __name__ == "__main__":
         mode="min",
     )
 
-    #generator_recon_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
-    #    dirpath=log_dir,
-    #    filename="gen_recon_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
-    #    save_top_k=1,
-    #    verbose=True,
-    #    monitor="g_recon_loss_step",
-    #    mode="min",
-    #)
-
-    #generator_percep_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
-    #    dirpath=log_dir,
-    #    filename="gen_percep_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{g_perceptual_loss:.2f}-{d_loss:.2f}",
-    #    save_top_k=1,
-    #    verbose=True,
-    #    monitor="g_perceptual_loss_step",
-    #    mode="min",
-    #)
-
     discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
         filename="dis_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
@@ -636,12 +660,13 @@ if __name__ == "__main__":
 
     data = HumanBrainDataModule()
     data.prepare_data()
-    example = data.test_dataloader().dataset.__getitem__(0)
+    example_data_test = data.test_dataloader().dataset.__getitem__(0)
+    example_data_train = data.train_dataloader().dataset.__getitem__(0)
     # example = data.test_dataset.__getitem__(0) #data.test_dataloader().dataset.__getitem__(0)
-    model = GAN(*data.size(), example_data=example)
+    model = GAN(*data.size(), example_data_train=example_data_train, example_data_test=example_data_test)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[0],
+        gpus=[1],
         max_epochs=1000,
         logger=tb_logger,
         callbacks=[
@@ -650,7 +675,8 @@ if __name__ == "__main__":
            # generator_recon_checkpoint_callback,
            # generator_percep_checkpoint_callback,
         ],
-        accelerator="dp"
+        accelerator="dp",
+        gradient_clip_val=0.5
         # precision=16
         # amp_backend='apex',
         # amp_level='O3'

@@ -211,3 +211,68 @@ class ResampleT1T2d(MapTransform):
         # print("end resampling")
 
         return d
+
+
+
+
+
+
+class OldResampleT1T2d(MapTransform):
+    def __init__(self, keys, output_size: list = [256, 256, 256], image_type=itk.Image[itk.F, 3]):
+        assert len(keys) == 2, "must pass in a t1 key and t2 key: keys=['t1w', 't2w']"
+        self.t1w_key = keys[0]
+        self.t2w_key = keys[1]
+        
+        self.output_size = output_size
+
+        # define itk types
+        self.image_type = image_type
+
+        # linear iterpolation
+        self.linear_interpolator = itk.LinearInterpolateImageFunction[self.image_type, itk.D].New()
+        # identity transform
+        self.identity_transform = itk.IdentityTransform[itk.D, 3].New()
+        
+
+    def __call__(self, data):
+        d = dict(data)
+        t1w_itk_image = d[self.t1w_key]
+
+
+        identity_direction = self.image_type.New().GetDirection()
+        identity_direction.SetIdentity()
+        self.linear_interpolator = itk.LinearInterpolateImageFunction.New(t1w_itk_image)
+
+        # calculate necessary spacing
+        physical_extent = np.array(t1w_itk_image.GetLargestPossibleRegion().GetSize()) * np.array(t1w_itk_image.GetSpacing())
+        output_spacing = physical_extent / np.array(self.output_size)
+        
+        reference_image = type(t1w_itk_image).New()
+        reference_image.SetOrigin(t1w_itk_image.GetOrigin())
+        reference_image.SetSpacing(output_spacing)
+        reference_image.SetDirection(identity_direction)
+        region = reference_image.GetLargestPossibleRegion()
+        region.SetSize(self.output_size)
+        reference_image.SetLargestPossibleRegion(region)
+
+        # print("running resample")
+        d[self.t1w_key] = itk.resample_image_filter(
+            d[self.t1w_key],
+            transform=self.identity_transform,
+            interpolator=self.linear_interpolator,
+            reference_image=reference_image,
+            use_reference_image=True,
+            number_of_work_units=1
+        )
+        
+        d[self.t2w_key] = itk.resample_image_filter(
+            d[self.t2w_key],
+            transform=self.identity_transform,
+            interpolator=self.linear_interpolator,
+            reference_image=reference_image,
+            use_reference_image=True,
+            number_of_work_units=1
+        )
+        # print("done resample")
+
+        return d
