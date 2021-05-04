@@ -84,11 +84,12 @@ class CasNetGenerator(pl.LightningModule):
 
 if __name__ == "__main__":
 
-    checkpoints_dir = "/Shared/sinapse/aml/correct-resampler/casnet-gen_patchgan-disc"
+    # checkpoints_dir = "/Shared/sinapse/aml/perceptual-test/casnet-gen_patchgan-disc"
+    checkpoints_dir = "/Shared/sinapse/aml/incorrect-resampler/casnet-gen_patchgan-disc"
 
     # define model and load its parameters
     model = CasNetGenerator.load_from_checkpoint(
-        checkpoint_path=f"{checkpoints_dir}/gen_epoch=60-g_loss=100.00-g_recon_loss=0.00-d_loss=45.00.ckpt",
+        checkpoint_path=f"{checkpoints_dir}/gen_epoch=36-g_loss=0.00-g_recon_loss=0.00-d_loss=55.00.ckpt",
         hparams_file=f"{checkpoints_dir}/default/version_0/hparams.yaml",
         img_shape=(128, 128, 128),
         strict=False
@@ -103,9 +104,9 @@ if __name__ == "__main__":
     saver_predicted = NiftiSaver(output_dir=f"{inferrence_dir}/predicted_t2w", output_postfix="predicted")
 
     # load the test data
-    with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
+    with open('/home/cjohnson30/Cross-Modality-Minipig-Gan/code/metadata/T1w_paths.json', 'r') as openfile:
         t1_json = json.load(openfile)
-    with open('/Shared/sinapse/mbrzus/Cross-Modality-Minipig-Gan/code/metadata/T2w_paths.json', 'r') as openfile:
+    with open('/home/cjohnson30/Cross-Modality-Minipig-Gan/code/metadata/T2w_paths.json', 'r') as openfile:
         t2_json = json.load(openfile)
 
 
@@ -171,7 +172,7 @@ if __name__ == "__main__":
         out_transforms = Compose([
             ToNumpyd(keys=["t2w_generated", "t2w"]),
             ToITKImaged(keys=["t2w_generated", "t2w"]),
-            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="inferred_new")
+            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="test1_bad_resampler")
         ])
 
         out_transforms(item)
