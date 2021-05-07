@@ -63,19 +63,19 @@ class Discriminator(nn.Module):
             nn.BatchNorm3d(128),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
-            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=kernel, stride=stride),
+            nn.Conv3d(in_channels=128, out_channels=256, kernel_size=(4,4,4), stride=(2,2,2)),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
-            nn.Conv3d(in_channels=256, out_channels=512, kernel_size=kernel, stride=stride),
-            nn.BatchNorm3d(512),
+            nn.Conv3d(in_channels=256, out_channels=256, kernel_size=(4,4,4), stride=(2,2,2)),
+            nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True)
         )
 
         self.model_linear = nn.Sequential(
             # Sigmoid
             nn.Flatten(),
-            nn.Linear(512 * 24 * 24 * 24, 1),
+            nn.Linear(256 * 24 * 24 * 24, 32),
             nn.Sigmoid()
         )
 
@@ -89,11 +89,11 @@ class Discriminator(nn.Module):
 
 
 if __name__ == "__main__":
-    arr = np.ones((32, 32, 32))
+    arr = np.ones((128, 128, 128))
     arr = torch.from_numpy(arr)
     arr = arr.unsqueeze(0).unsqueeze(0).cuda().type(torch.cuda.FloatTensor)
 
-    model = Discriminator((32, 32, 32))
+    model = Discriminator((128, 128, 128))
     model.cuda()
     print(model)
     print(model.forward(arr))
