@@ -134,7 +134,7 @@ class CasNetGenerator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, img_shape, use_perceptual=True):
+    def __init__(self, img_shape, use_perceptual=False):
         super().__init__()
         self.use_perceptual = use_perceptual
         kernel = (3, 3, 3)
@@ -191,9 +191,9 @@ class Discriminator(nn.Module):
 
         for module in self.model_linear:
             x = module(x)
-            if self.use_perceptual:
-                perceptual_dict[index] = x.clone()
-                index = index + 1
+            #if self.use_perceptual:
+            #    perceptual_dict[index] = x.clone()
+            #    index = index + 1
 
         return x, perceptual_dict
 
@@ -351,18 +351,18 @@ class GAN(pl.LightningModule):
             )
             _, disc_activations_real = self.discriminator(t2_ground_truth_batch)
             # minimize difference in the activations
-            g_perceptual_loss = self.perceptual_loss(
-                disc_activations_fake, disc_activations_real
-            )
-            self.log(
-                "g_perceptual_loss",
-                g_perceptual_loss,
-                prog_bar=True,
-                logger=True,
-                on_step=True,
-                on_epoch=True,
-                sync_dist=True,
-            )
+            #g_perceptual_loss = self.perceptual_loss(
+            #    disc_activations_fake, disc_activations_real
+            #)
+            #self.log(
+            #    "g_perceptual_loss",
+            #    g_perceptual_loss,
+            #    prog_bar=True,
+            #    logger=True,
+            #    on_step=True,
+            #    on_epoch=True,
+            #    sync_dist=True,
+            #)
 
             # adversarial loss is binary cross-entropy
             g_adv_loss = self.adversarial_loss(disc_output_fake, valid)
@@ -387,7 +387,7 @@ class GAN(pl.LightningModule):
                 on_epoch=True,
                 sync_dist=True,
             )
-            g_loss = g_adv_loss + g_recon_loss + g_perceptual_loss
+            g_loss = g_adv_loss + g_recon_loss# + g_perceptual_loss
             self.log(
                 "g_loss",
                 g_loss,
@@ -567,7 +567,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         train_loader = torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=7, shuffle=False, num_workers=5
+            self.train_dataset, batch_size=10, shuffle=False, num_workers=5
         )
         return train_loader
         # return CustomDataLoader(self.train_dataset, batch_size=5)
@@ -641,7 +641,7 @@ if __name__ == "__main__":
     model = GAN(*data.size(), example_data=example)
     # initialise Lightning's trainer.
     trainer = pl.Trainer(
-        gpus=[0],
+        gpus=[1],
         max_epochs=1000,
         logger=tb_logger,
         callbacks=[
