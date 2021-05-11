@@ -8,6 +8,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 # from pytorch_lightning import LightningModule 
+import torchmetrics
 import torch
 from joblib import Parallel, delayed
 import json
@@ -17,6 +18,7 @@ from monai.data import CacheDataset, NiftiSaver
 from monai.inferers import sliding_window_inference, SimpleInferer, SlidingWindowInferer
 from monai.losses import DiceLoss, GlobalMutualInformationLoss
 from monai.metrics import compute_meandice, DiceMetric, compute_hausdorff_distance, HausdorffDistanceMetric
+from monai.metrics import *
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet
 from monai.networks.utils import one_hot
@@ -45,6 +47,7 @@ from monai.transforms import (
 from transforms import *
 from transforms2 import *
 from GAN_old_discriminator_no_patches import GAN
+from sklearn.metrics import mean_absolute_error
 
 
 
@@ -79,6 +82,7 @@ def get_test_data():
 
     test_files = structure_to_monai_dict(test_structure)
     return test_files
+
 
 
 if __name__ == "__main__":
@@ -133,6 +137,11 @@ if __name__ == "__main__":
     # create a test dataset with the preprocessed images
     test_dataset = CacheDataset(data=test_files, transform=transforms, cache_rate=1.0, num_workers=4)
 
+    mean_absolute_error = torchmetrics.MeanAbsoluteError()
+    # ssim = torchmetrics.SSIM()
+
+    mae_by_t1 = {}
+    # mae_metric = MAEMetric()
     # Loop to accessed images after transformations
     for i in range(len(test_files)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
@@ -146,11 +155,24 @@ if __name__ == "__main__":
         item['t2w_generated_meta_dict']['filename'] = "t2_inferred.nii.gz"
         item['t2w_meta_dict']['filename'] = "t2_truth.nii.gz"
 
-        out_transforms = Compose([
-            ToNumpyd(keys=["t2w_generated", "t2w"]),
-            ToITKImaged(keys=["t2w_generated", "t2w"]),
-            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix=Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name)
-        ])
+        # Use mean absolute error
+        # print(f"mae_metric: {mae_metric(item['t2w_generated'], item['t2w'])}")
+        t2_gen = item['t2w_generated'].squeeze(dim=0).squeeze(dim=0)
+        t2_gt = item['t2w'].squeeze(dim=0)
+        print(float(mean_absolute_error(t2_gen, t2_gt)))
+        # print(ssim(t2_gen, t2_gt))
+        mae_by_t1[Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name] = float(mean_absolute_error(t2_gen, t2_gt))
 
-        out_transforms(item)
+        # print(item['t2w_generated'].shape)
+        # print(item['t2w'].shape)
 
+        # out_transforms = Compose([
+        #     ToNumpyd(keys=["t2w_generated", "t2w"]),
+        #     ToITKImaged(keys=["t2w_generated", "t2w"]),
+        #     SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix=Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name)
+        # ])
+
+        # out_transforms(item)
+
+with open('mean_absolute_error.json', 'w') as outfile:
+    json.dump(mae_by_t1, outfile)
