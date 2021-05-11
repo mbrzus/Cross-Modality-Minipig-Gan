@@ -43,6 +43,7 @@ from monai.transforms import (
     ToNumpyd,
     ToTensord,
     ThresholdIntensityd,
+    Lambdad
 )
 from transforms import *
 from transforms2 import *
@@ -98,7 +99,7 @@ if __name__ == "__main__":
         width=128,
         height=128,
         depth=128,
-        checkpoint_path=f"{checkpoints_dir}/gen_epoch=24-g_loss=100.03-d_loss=45.00.ckpt",
+        checkpoint_path=f"{checkpoints_dir}/gen_recon_epoch=30-g_loss=100.03-g_recon_loss=0.03-d_loss=45.00.ckpt",
         hparams_file=f"{checkpoints_dir}/default/version_13/hparams.yaml",
         img_shape=(128, 128, 128),
         strict=False
@@ -146,6 +147,24 @@ if __name__ == "__main__":
     for i in range(len(test_files)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
 
+        t1_transforms = Compose([
+            ToNumpyd(keys=["t1w"]),
+            ScaleIntensityRangePercentilesd(
+                keys=["t1w"],
+                lower=0,
+                upper=100,
+                b_min=0,
+                b_max=255,
+                clip=True,
+                relative=False,
+            ),
+            Lambdad(keys=["t1w"], func=lambda x: np.round(x)),
+            ToITKImaged(keys=["t1w"]),
+            SaveITKImaged(keys=["t1w"], out_dir="/Shared/sinapse/aml/inferrence_rescaled", output_postfix="")
+        ])
+
+        t1_transforms(item)
+
         # perform the inference
         with torch.no_grad():
             test_output = model.generator.forward(item['t1w'].unsqueeze(dim=0).to(device))
@@ -161,18 +180,28 @@ if __name__ == "__main__":
         t2_gt = item['t2w'].squeeze(dim=0)
         print(float(mean_absolute_error(t2_gen, t2_gt)))
         # print(ssim(t2_gen, t2_gt))
-        mae_by_t1[Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name] = float(mean_absolute_error(t2_gen, t2_gt))
+        # mae_by_t1[Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name] = float(mean_absolute_error(t2_gen, t2_gt))
 
         # print(item['t2w_generated'].shape)
         # print(item['t2w'].shape)
 
-        # out_transforms = Compose([
-        #     ToNumpyd(keys=["t2w_generated", "t2w"]),
-        #     ToITKImaged(keys=["t2w_generated", "t2w"]),
-        #     SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix=Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name)
-        # ])
+        out_transforms = Compose([
+            ToNumpyd(keys=["t2w_generated", "t2w"]),
+            ScaleIntensityRangePercentilesd(
+                keys=["t2w_generated", "t2w"],
+                lower=0,
+                upper=100,
+                b_min=0,
+                b_max=255,
+                clip=True,
+                relative=False,
+            ),
+            Lambdad(keys=["t2w_generated", "t2w"], func=lambda x: np.round(x)),
+            ToITKImaged(keys=["t2w_generated", "t2w"]),
+            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir="/Shared/sinapse/aml/inferrence_rescaled", output_postfix=Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name)
+        ])
 
-        # out_transforms(item)
+        out_transforms(item)
 
-with open('mean_absolute_error.json', 'w') as outfile:
-    json.dump(mae_by_t1, outfile)
+# with open('mean_absolute_error.json', 'w') as outfile:
+#     json.dump(mae_by_t1, outfile)
