@@ -15,7 +15,7 @@ import numpy as np
 from itertools import product as cartesian_product
 from monai.data import CacheDataset, NiftiSaver
 from monai.inferers import sliding_window_inference, SimpleInferer, SlidingWindowInferer
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss, GlobalMutualInformationLoss
 from monai.metrics import compute_meandice, DiceMetric, compute_hausdorff_distance, HausdorffDistanceMetric
 from monai.networks.layers import Norm
 from monai.networks.nets import UNet
@@ -40,7 +40,7 @@ from monai.transforms import (
     Spacingd,
     ToNumpyd,
     ToTensord,
-    ThresholdIntensityd
+    ThresholdIntensityd,
 )
 from transforms import *
 from transforms2 import *
@@ -53,7 +53,7 @@ def get_test_data():
     with open(f"{meta_dir}/structure.json", "r") as openfile:
         structure = json.load(openfile)
 
-    test_structure = structure["train"]
+    test_structure = structure["test"]
 
     def structure_to_monai_dict(structure_dict):
         output_list_of_dicts = []
@@ -94,7 +94,7 @@ if __name__ == "__main__":
         width=128,
         height=128,
         depth=128,
-        checkpoint_path=f"{checkpoints_dir}/gen_recon_epoch=9-g_loss=100.04-g_recon_loss=0.04-d_loss=45.00.ckpt",
+        checkpoint_path=f"{checkpoints_dir}/gen_epoch=24-g_loss=100.03-d_loss=45.00.ckpt",
         hparams_file=f"{checkpoints_dir}/default/version_13/hparams.yaml",
         img_shape=(128, 128, 128),
         strict=False
@@ -106,7 +106,9 @@ if __name__ == "__main__":
 
     # prepare test data
     test_files = get_test_data()
-    test_files = test_files[:1]
+    # test_files = test_files[:1]
+
+    print(f"Performing inferrence on {len(test_files)} files")
 
     # define transforms for the data
     transforms = Compose(
@@ -132,19 +134,11 @@ if __name__ == "__main__":
     test_dataset = CacheDataset(data=test_files, transform=transforms, cache_rate=1.0, num_workers=4)
 
     # Loop to accessed images after transformations
-    for i in range(1): #range(len(test_T2s)):
+    for i in range(len(test_files)):
         item = test_dataset.__getitem__(i)  # extract image and label from loaded dataset
-        print(item.keys())
-        print(item['t1w'].size())
-        print(item['t1w'].unsqueeze(dim=0).size())
 
         # perform the inference
         with torch.no_grad():
-            # roi_size = (128, 128, 128)
-            # sw_batch_size = 12
-            # test_output = sliding_window_inference(
-            #     item['t1w'].unsqueeze(dim=0).to(device), roi_size, sw_batch_size, model
-            # )
             test_output = model.generator.forward(item['t1w'].unsqueeze(dim=0).to(device))
 
         item['t2w_generated'] = test_output.detach().cpu()
@@ -154,17 +148,8 @@ if __name__ == "__main__":
 
         out_transforms = Compose([
             ToNumpyd(keys=["t2w_generated", "t2w"]),
-            # ScaleIntensityRangePercentilesd(
-            #     keys=["t2w_generated", "t2w"],
-            #     lower=0.0,
-            #     upper=100.0,
-            #     b_min=0,
-            #     b_max=255,
-            #     clip=True,
-            #     relative=False,
-            # ),
             ToITKImaged(keys=["t2w_generated", "t2w"]),
-            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix="hope")
+            SaveITKImaged(keys=["t2w_generated", "t2w"], out_dir=inferrence_dir, output_postfix=Path(test_files[i].get('t1w')).with_suffix('').with_suffix('').name)
         ])
 
         out_transforms(item)
