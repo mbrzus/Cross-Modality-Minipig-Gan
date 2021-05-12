@@ -1,7 +1,7 @@
 import json
 import matplotlib.pyplot as plt
 
-with open("mean_absolute_error.json") as f:
+with open("mean_squared_error.json") as f:
     data = json.load(f)
 
 mae_t2gen = []
