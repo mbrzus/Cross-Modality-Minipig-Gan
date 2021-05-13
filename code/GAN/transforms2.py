@@ -121,11 +121,10 @@ unsqueze_lambda = lambda x: x.squeeze(dim=0)
 shape_lambda = lambda x: x.shape
 
 
-class Resampled(object):
-    def __init__(self, keys, output_size: list = [96, 96, 96], image_type=itk.Image[itk.F, 3]):
-        assert len(keys) == 2, "must pass in a t1w key and label key"
+class MiniPigResampled(object):
+    def __init__(self, keys, output_size: list = [128, 128, 128], image_type=itk.Image[itk.F, 3]):
+        #assert len(keys) == 2, "must pass in a t1w key and label key"
         self.t1w_key = keys[0]
-        self.label_key = keys[1]
         self.output_size = output_size
 
         # define itk types
@@ -133,27 +132,22 @@ class Resampled(object):
 
         # linear iterpolation
         self.linear_interpolator = itk.LinearInterpolateImageFunction[self.image_type, itk.D].New()
-        self.nearest_interpolator = itk.NearestNeighborInterpolateImageFunction[self.image_type, itk.D].New()
+
         # identity transform
         self.identity_transform = itk.IdentityTransform[itk.D, 3].New()
         # resampler
         self.t1w_resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
-        self.label_resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
 
         # configure t1w resampler
         self.t1w_resampler.SetSize(self.output_size)
         self.t1w_resampler.SetInterpolator(self.linear_interpolator)
         self.t1w_resampler.SetTransform(self.identity_transform)
-        # configure label resampler
-        self.label_resampler.SetSize(self.output_size)
-        self.label_resampler.SetInterpolator(self.nearest_interpolator)
-        self.label_resampler.SetTransform(self.identity_transform)
+
 
 
     def __call__(self, data):
         d = dict(data)
         t1w_itk_image = d[self.t1w_key]
-        label_itk_image = d[self.label_key]
 
         # calculate parameters
         t1w_direction = t1w_itk_image.GetDirection()
@@ -165,16 +159,6 @@ class Resampled(object):
         t1w_output_origin = np.add(np.subtract(np.asarray(t1w_origin), np.asarray(t1w_spacing)/2),
                                 np.asarray(t1w_output_spacing)/2)
 
-        label_direction = label_itk_image.GetDirection()
-        label_origin = np.asarray(label_itk_image.GetOrigin())
-        label_spacing = label_itk_image.GetSpacing()
-        label_physical_size = np.array(label_itk_image.GetLargestPossibleRegion().GetSize()) * np.array(
-            label_spacing)
-        label_output_spacing = label_physical_size / np.array(self.output_size)
-        label_output_origin = np.add(np.subtract(np.asarray(label_origin), np.asarray(label_spacing) / 2),
-                                  np.asarray(label_output_spacing) / 2)
-
-
         # set t1w resampler parameters
         self.t1w_resampler.SetOutputOrigin(t1w_output_origin)
         self.t1w_resampler.SetOutputDirection(t1w_direction)
@@ -183,17 +167,8 @@ class Resampled(object):
         self.t1w_resampler.SetInput(t1w_itk_image)
         self.t1w_resampler.UpdateLargestPossibleRegion()
 
-        # set label resampler parameters
-        self.label_resampler.SetOutputOrigin(label_output_origin)
-        self.label_resampler.SetOutputDirection(label_direction)
-        self.label_resampler.SetOutputSpacing(label_output_spacing)
-        # process label
-        self.label_resampler.SetInput(label_itk_image)
-        self.label_resampler.UpdateLargestPossibleRegion()
-
         # update the dictionary
         d[self.t1w_key] = self.t1w_resampler.GetOutput()
-        d[self.label_key] = self.label_resampler.GetOutput()
         return d
 
 
