@@ -11,9 +11,10 @@ import json
 ###     LOOK INTO T1w_data_split.py for comments     ###
 ########################################################
 
+
 def extract_sub(s: str):
     """function to extract the subject code from the path"""
-    subject = re.search(r'sub-\d+', s)[0]
+    subject = re.search(r"sub-\d+", s)[0]
     return subject
 
 
@@ -34,9 +35,9 @@ val_num = int(num_of_files * 0.1)
 
 t1w_paths.sort()
 
-train_t1w = t1w_paths[: train_num]
-val_t1w = t1w_paths[train_num: train_num + val_num]
-test_t1w = t1w_paths[train_num + val_num:]
+train_t1w = t1w_paths[:train_num]
+val_t1w = t1w_paths[train_num : train_num + val_num]
+test_t1w = t1w_paths[train_num + val_num :]
 
 for i in train_t1w:
     subject = extract_sub(i)
@@ -61,14 +62,9 @@ for i in val_t1w:
 
 print(len(train_t1w) + len(val_t1w) + len(test_t1w))
 
-t1w_dict = {"train": train_t1w,
-              "val": val_t1w,
-              "test": test_t1w}
+t1w_dict = {"train": train_t1w, "val": val_t1w, "test": test_t1w}
 
 json_object = json.dumps(t1w_dict)
 # Writing to sample.json
 with open("T2w_paths.json", "w") as outfile:
     outfile.write(json_object)
-
-
-

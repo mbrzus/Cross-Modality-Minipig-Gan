@@ -157,10 +157,9 @@ class Discriminator(nn.Module):
         #     nn.BatchNorm3d(512),
         #     nn.LeakyReLU(0.2, inplace=True)
         # )
-        
 
         # self.model_linear = nn.Sequential(
-        #     # Sigmoid 
+        #     # Sigmoid
         #     nn.F.Flatten(),
         #     nn.F.Linear(),
         #     nn.Sigmoid()
@@ -189,7 +188,9 @@ class GAN(pl.LightningModule):
         **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters("latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value")
+        self.save_hyperparameters(
+            "latent_dim", "lr", "b1", "b2", "batch_size", "one_sided_label_value"
+        )
 
         # networks
         data_shape = (channels, width, height, depth)
@@ -204,7 +205,7 @@ class GAN(pl.LightningModule):
 
     def adversarial_loss(self, y_hat, y):
         return F.binary_cross_entropy(y_hat, y)
-    
+
     def reconstruction_loss(self, y_hat, y):
         return F.l1_loss(y_hat, y)
 
@@ -223,13 +224,36 @@ class GAN(pl.LightningModule):
             valid = valid.type_as(t1w_images)
 
             # adversarial loss is binary cross-entropy
-            g_adv_loss = self.adversarial_loss(self.discriminator(generated_imgs), valid)
-            self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            g_adv_loss = self.adversarial_loss(
+                self.discriminator(generated_imgs), valid
+            )
+            self.log(
+                "g_adv_loss",
+                g_adv_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+            )
             g_recon_loss = self.reconstruction_loss(generated_imgs, t2w_images)
-            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            self.log(
+                "g_recon_loss",
+                g_recon_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+            )
             g_loss = g_adv_loss + g_recon_loss
-            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            
+            self.log(
+                "g_loss",
+                g_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+            )
+
             return g_loss
 
         # train discriminator
@@ -237,7 +261,9 @@ class GAN(pl.LightningModule):
             # Measure discriminator's ability to classify real from generated samples
 
             # how well can it label as real?
-            valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
+            valid = (
+                torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
+            )
             valid = valid.type_as(t1w_images)
 
             real_loss = self.adversarial_loss(self.discriminator(t2w_images), valid)
@@ -252,7 +278,14 @@ class GAN(pl.LightningModule):
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
-            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+            self.log(
+                "d_loss",
+                d_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+            )
             return d_loss
 
     def configure_optimizers(self):
@@ -266,7 +299,13 @@ class GAN(pl.LightningModule):
 
     def on_epoch_end(self):
         # log sampled images -- just logs from the last batch run
-        plot_2d_or_3d_image(self.generated_imgs, self.current_epoch, self.logger.experiment, tag='generated_t2w')
+        plot_2d_or_3d_image(
+            self.generated_imgs,
+            self.current_epoch,
+            self.logger.experiment,
+            tag="generated_t2w",
+        )
+
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
 class HumanBrainDataModule(pl.LightningDataModule):
@@ -323,7 +362,6 @@ class HumanBrainDataModule(pl.LightningDataModule):
 
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
-
 
         # train_files = train_files[:50]
         # val_files = val_files[:5]
@@ -443,5 +481,3 @@ if __name__ == "__main__":
     trainer.fit(model)
 
     print("--- %s seconds ---" % (time.time() - start_time))
-
-   

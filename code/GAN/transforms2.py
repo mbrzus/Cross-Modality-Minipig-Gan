@@ -71,7 +71,7 @@ class ITKImageToNumpyd(object):
 
 
 class ToITKImaged(object):
-    #TODO: apply changes and test like in the other transform file
+    # TODO: apply changes and test like in the other transform file
     def __init__(self, keys):
         self.keys = keys
         pass
@@ -95,6 +95,7 @@ class ToITKImaged(object):
             d[k] = itk_image
         return d
 
+
 class SaveITKImaged(object):
     def __init__(self, keys, out_dir, output_postfix="inf"):
         self.keys = keys
@@ -106,8 +107,8 @@ class SaveITKImaged(object):
         for k in self.keys:
             input_filename = Path(d[f"{k}_meta_dict"]["filename"]).absolute()
             parent_dir = input_filename.parent
-            basename = str(input_filename.name).split('.')[0]
-            extension = '.'.join(str(input_filename).split('.')[-2:])
+            basename = str(input_filename.name).split(".")[0]
+            extension = ".".join(str(input_filename).split(".")[-2:])
 
             output_filename = f"{self.out_dir}/{basename}_{self.postfix}.{extension}"
             print("writing to", output_filename)
@@ -122,7 +123,9 @@ shape_lambda = lambda x: x.shape
 
 
 class Resampled(object):
-    def __init__(self, keys, output_size: list = [96, 96, 96], image_type=itk.Image[itk.F, 3]):
+    def __init__(
+        self, keys, output_size: list = [96, 96, 96], image_type=itk.Image[itk.F, 3]
+    ):
         assert len(keys) == 2, "must pass in a t1w key and label key"
         self.t1w_key = keys[0]
         self.label_key = keys[1]
@@ -132,13 +135,21 @@ class Resampled(object):
         self.image_type = image_type
 
         # linear iterpolation
-        self.linear_interpolator = itk.LinearInterpolateImageFunction[self.image_type, itk.D].New()
-        self.nearest_interpolator = itk.NearestNeighborInterpolateImageFunction[self.image_type, itk.D].New()
+        self.linear_interpolator = itk.LinearInterpolateImageFunction[
+            self.image_type, itk.D
+        ].New()
+        self.nearest_interpolator = itk.NearestNeighborInterpolateImageFunction[
+            self.image_type, itk.D
+        ].New()
         # identity transform
         self.identity_transform = itk.IdentityTransform[itk.D, 3].New()
         # resampler
-        self.t1w_resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
-        self.label_resampler = itk.ResampleImageFilter[self.image_type, self.image_type].New()
+        self.t1w_resampler = itk.ResampleImageFilter[
+            self.image_type, self.image_type
+        ].New()
+        self.label_resampler = itk.ResampleImageFilter[
+            self.image_type, self.image_type
+        ].New()
 
         # configure t1w resampler
         self.t1w_resampler.SetSize(self.output_size)
@@ -149,7 +160,6 @@ class Resampled(object):
         self.label_resampler.SetInterpolator(self.nearest_interpolator)
         self.label_resampler.SetTransform(self.identity_transform)
 
-
     def __call__(self, data):
         d = dict(data)
         t1w_itk_image = d[self.t1w_key]
@@ -159,21 +169,26 @@ class Resampled(object):
         t1w_direction = t1w_itk_image.GetDirection()
         t1w_origin = np.asarray(t1w_itk_image.GetOrigin())
         t1w_spacing = t1w_itk_image.GetSpacing()
-        t1w_physical_size = np.array(t1w_itk_image.GetLargestPossibleRegion().GetSize()) * np.array(
-            t1w_spacing)
+        t1w_physical_size = np.array(
+            t1w_itk_image.GetLargestPossibleRegion().GetSize()
+        ) * np.array(t1w_spacing)
         t1w_output_spacing = t1w_physical_size / np.array(self.output_size)
-        t1w_output_origin = np.add(np.subtract(np.asarray(t1w_origin), np.asarray(t1w_spacing)/2),
-                                np.asarray(t1w_output_spacing)/2)
+        t1w_output_origin = np.add(
+            np.subtract(np.asarray(t1w_origin), np.asarray(t1w_spacing) / 2),
+            np.asarray(t1w_output_spacing) / 2,
+        )
 
         label_direction = label_itk_image.GetDirection()
         label_origin = np.asarray(label_itk_image.GetOrigin())
         label_spacing = label_itk_image.GetSpacing()
-        label_physical_size = np.array(label_itk_image.GetLargestPossibleRegion().GetSize()) * np.array(
-            label_spacing)
+        label_physical_size = np.array(
+            label_itk_image.GetLargestPossibleRegion().GetSize()
+        ) * np.array(label_spacing)
         label_output_spacing = label_physical_size / np.array(self.output_size)
-        label_output_origin = np.add(np.subtract(np.asarray(label_origin), np.asarray(label_spacing) / 2),
-                                  np.asarray(label_output_spacing) / 2)
-
+        label_output_origin = np.add(
+            np.subtract(np.asarray(label_origin), np.asarray(label_spacing) / 2),
+            np.asarray(label_output_spacing) / 2,
+        )
 
         # set t1w resampler parameters
         self.t1w_resampler.SetOutputOrigin(t1w_output_origin)
@@ -205,7 +220,9 @@ class BinaryThresholdd(object):
         self.high = high
         self.threshold_value = threshold_value
         image_type = itk.Image[itk.F, 3]
-        self.thresholdFilter = itk.BinaryThresholdImageFilter[image_type, image_type].New()
+        self.thresholdFilter = itk.BinaryThresholdImageFilter[
+            image_type, image_type
+        ].New()
 
     def __call__(self, data):
         d = dict(data)
@@ -219,8 +236,3 @@ class BinaryThresholdd(object):
 
         d[self.label_key] = label
         return d
-
-
-    
-
-

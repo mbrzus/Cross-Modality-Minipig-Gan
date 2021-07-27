@@ -37,7 +37,6 @@ def image_to_gif(image_filename, axis, out_dir=None):
     if out_dir is None:
         out_dir = image_filename.parent
 
-
     output_filename = str(Path(out_dir) / f"{name}_{axis}.gif")
 
     with imageio.get_writer(output_filename, mode="I") as writer:

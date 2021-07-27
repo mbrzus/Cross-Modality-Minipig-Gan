@@ -44,7 +44,7 @@ from monai.transforms import (
     Rand3DElasticd,
     Spacingd,
     ToTensord,
-    ThresholdIntensityd
+    ThresholdIntensityd,
 )
 
 # Read data from the json files - json files store paths to images and labels
@@ -63,18 +63,16 @@ def structure_to_monai_dict(structure_dict):
     for subject_id in structure_dict.keys():
         for session_id in structure_dict[subject_id].keys():
             if (
-                    len(structure_dict[subject_id][session_id]["t1w"]) > 0
-                    and len(structure_dict[subject_id][session_id]["t2w"]) > 0
+                len(structure_dict[subject_id][session_id]["t1w"]) > 0
+                and len(structure_dict[subject_id][session_id]["t2w"]) > 0
             ):
                 # TODO: add structure here to filter by age, gender, site, scanner, T-value, etc..
                 [
-                    output_list_of_dicts.append(
-                        {"t1w": t1_file, "t2w": t2_file}
-                    )
+                    output_list_of_dicts.append({"t1w": t1_file, "t2w": t2_file})
                     for t1_file, t2_file in cartesian_product(
-                    structure_dict[subject_id][session_id]["t1w"],
-                    structure_dict[subject_id][session_id]["t2w"],
-                )
+                        structure_dict[subject_id][session_id]["t1w"],
+                        structure_dict[subject_id][session_id]["t2w"],
+                    )
                 ]
 
     return output_list_of_dicts
@@ -85,7 +83,7 @@ test_files = test_files[:1]
 
 
 # path to directory where the tested images will be stored
-#path_to_write = "/home/mbrzus/programming/masterthesis/code/test/image_transform_pipeline_test"
+# path_to_write = "/home/mbrzus/programming/masterthesis/code/test/image_transform_pipeline_test"
 path_to_write = "/home/mbrzus/Desktop"
 
 transforms = Compose(
@@ -108,19 +106,25 @@ transforms = Compose(
 )
 
 # MONAI Cache dataset function uses cache to efficiently load the images with transformations
-train_dataset = CacheDataset(data=test_files, transform=transforms, cache_rate=1.0, num_workers=4)
+train_dataset = CacheDataset(
+    data=test_files, transform=transforms, cache_rate=1.0, num_workers=4
+)
 
 # Loop to accessed images after transformations
 for i in range(1):
     item = train_dataset.__getitem__(i)  # extract image and label from loaded dataset
-    t1w_np = item['t1w'].squeeze(dim=0).numpy()
-    t2w_np = item['t2w'].squeeze(dim=0).numpy()
+    t1w_np = item["t1w"].squeeze(dim=0).numpy()
+    t2w_np = item["t2w"].squeeze(dim=0).numpy()
     print(t1w_np.shape)
-    item['t1w'] = t1w_np
-    item['t2w'] = t2w_np
+    item["t1w"] = t1w_np
+    item["t2w"] = t2w_np
 
-    out_transforms = Compose([
-        ToITKImaged(keys=["t1w", "t2w"]),
-        SaveITKImaged(keys=["t1w", "t2w"], out_dir=path_to_write, output_postfix="test")
-    ])
+    out_transforms = Compose(
+        [
+            ToITKImaged(keys=["t1w", "t2w"]),
+            SaveITKImaged(
+                keys=["t1w", "t2w"], out_dir=path_to_write, output_postfix="test"
+            ),
+        ]
+    )
     out_transforms(item)

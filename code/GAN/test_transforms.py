@@ -38,7 +38,7 @@ from monai.transforms import (
     Rand3DElasticd,
     Spacingd,
     ToTensord,
-    ThresholdIntensityd
+    ThresholdIntensityd,
 )
 from monai.utils import set_determinism
 
@@ -57,18 +57,16 @@ def structure_to_monai_dict(structure_dict):
     for subject_id in structure_dict.keys():
         for session_id in structure_dict[subject_id].keys():
             if (
-                    len(structure_dict[subject_id][session_id]["t1w"]) > 0
-                    and len(structure_dict[subject_id][session_id]["t2w"]) > 0
+                len(structure_dict[subject_id][session_id]["t1w"]) > 0
+                and len(structure_dict[subject_id][session_id]["t2w"]) > 0
             ):
                 # TODO: add structure here to filter by age, gender, site, scanner, T-value, etc..
                 [
-                    output_list_of_dicts.append(
-                        {"t1w": t1_file, "t2w": t2_file}
-                    )
+                    output_list_of_dicts.append({"t1w": t1_file, "t2w": t2_file})
                     for t1_file, t2_file in cartesian_product(
-                    structure_dict[subject_id][session_id]["t1w"],
-                    structure_dict[subject_id][session_id]["t2w"],
-                )
+                        structure_dict[subject_id][session_id]["t1w"],
+                        structure_dict[subject_id][session_id]["t2w"],
+                    )
                 ]
 
     return output_list_of_dicts
@@ -87,8 +85,7 @@ train_files = train_files[:1]
 
 # path to directory where the tested images will be stored
 path_to_write = "/Shared/sinapse/mbrzus/transform_test"
-saver = NiftiSaver(output_dir=path_to_write, output_postfix="resample",
-                   dtype=None)
+saver = NiftiSaver(output_dir=path_to_write, output_postfix="resample", dtype=None)
 
 # MONAI transforms used for preprocessing image
 # detailed description of the transforms and their behavior is in the preprocessing_transforms.pptx presentation
@@ -131,24 +128,25 @@ transforms = Compose(
     ]
 )
 # MONAI Cache dataset function uses cache to efficiently load the images with transformations
-train_dataset = CacheDataset(data=train_files, transform=transforms, cache_rate=1.0, num_workers=4,)
+train_dataset = CacheDataset(
+    data=train_files,
+    transform=transforms,
+    cache_rate=1.0,
+    num_workers=4,
+)
 
 
 # Loop to accessed images after transformations
-for i in range(1): #range(len(train_labels)):
+for i in range(1):  # range(len(train_labels)):
     item = train_dataset.__getitem__(i)  # extract image and label from loaded dataset
     print(item.keys())
-    tensor_im = item['t1w']  # get the image after transformations
+    tensor_im = item["t1w"]  # get the image after transformations
     print(tensor_im.size())
-    tensor_im2 = item['t2w']  # get the image after transformations
+    tensor_im2 = item["t2w"]  # get the image after transformations
     print(tensor_im2.size())
-    item['t1w_meta_dict']['spatial_shape'] = np.array([128, 128, 128])
-    print(item['t1w_meta_dict'])
-    item['t2w_meta_dict']['spatial_shape'] = np.array([128, 128, 128])
-    print(item['t2w_meta_dict'])
-    saver.save(data=item['t1w'], meta_data=item['t1w_meta_dict'])
-    saver.save(data=item['t2w'], meta_data=item['t2w_meta_dict'])
-
-
-
-
+    item["t1w_meta_dict"]["spatial_shape"] = np.array([128, 128, 128])
+    print(item["t1w_meta_dict"])
+    item["t2w_meta_dict"]["spatial_shape"] = np.array([128, 128, 128])
+    print(item["t2w_meta_dict"])
+    saver.save(data=item["t1w"], meta_data=item["t1w_meta_dict"])
+    saver.save(data=item["t2w"], meta_data=item["t2w_meta_dict"])

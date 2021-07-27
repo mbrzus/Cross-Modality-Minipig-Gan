@@ -90,10 +90,7 @@ def generate_json(argv):
     #     / f"{Path(argv.image_dir).name}_TR{strfmt_splits[0]}_VAL{strfmt_splits[1]}_TE{strfmt_splits[2]}_{TIMESTAMP}.json"
     # )
 
-    out_file = (
-        Path(argv.out_dir)
-        / f"structure.json"
-    )
+    out_file = Path(argv.out_dir) / f"structure.json"
 
     with open(out_file, "w") as f:
         json.dump(main_dict, f, indent=4)

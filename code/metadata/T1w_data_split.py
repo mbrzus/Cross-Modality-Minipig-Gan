@@ -10,8 +10,9 @@ import json
 
 def extract_sub(s: str):
     """function to extract the subject code from the path using reegex"""
-    subject = re.search(r'sub-\d+', s)[0]
+    subject = re.search(r"sub-\d+", s)[0]
     return subject
+
 
 # path to the data directory
 base_path = "/Shared/sinapse/chdi_bids/PREDICTHD_BIDS/derivatives/physicalACPC/"
@@ -33,9 +34,9 @@ train_num = int(num_of_files * 0.8)
 val_num = int(num_of_files * 0.1)
 
 # using the calculated numbers split the data
-train_t1w = t1w_paths[: train_num]
-val_t1w = t1w_paths[train_num: train_num + val_num]
-test_t1w = t1w_paths[train_num + val_num:]
+train_t1w = t1w_paths[:train_num]
+val_t1w = t1w_paths[train_num : train_num + val_num]
+test_t1w = t1w_paths[train_num + val_num :]
 
 # those 3 loops make sure that images of one subject can be only in one dataset
 # (to ensure we want test on the same subject we trained on)
@@ -63,15 +64,10 @@ for i in val_t1w:
 print(len(train_t1w) + len(val_t1w) + len(test_t1w))
 
 # create a dictionary
-t1w_dict = {"train": train_t1w,
-              "val": val_t1w,
-              "test": test_t1w}
+t1w_dict = {"train": train_t1w, "val": val_t1w, "test": test_t1w}
 
 # write out the dictionary as a json file
 json_object = json.dumps(t1w_dict)
 # Writing to sample.json
 with open("T1w_paths.json", "w") as outfile:
     outfile.write(json_object)
-
-
-

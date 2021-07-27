@@ -92,16 +92,16 @@ from monai.visualize.img2tensorboard import plot_2d_or_3d_image
 class CasNetGenerator(nn.Module):
     # source: https://arxiv.org/pdf/1806.06397.pdf
     def __init__(
-            self, img_shape, n_unet_blocks=6
+        self, img_shape, n_unet_blocks=6
     ):  # TODO: change num u_net blocks for actual trraining
         super().__init__()
         self.img_shape = img_shape
 
         def unet_block(
-                in_channels,
-                out_channels,
-                channels=(16, 32, 64, 128),
-                strides=(2, 2, 2),
+            in_channels,
+            out_channels,
+            channels=(16, 32, 64, 128),
+            strides=(2, 2, 2),
         ):
             return UNet(
                 dimensions=3,
@@ -156,6 +156,7 @@ class CasNetGenerator(nn.Module):
 #             nn.Sigmoid()
 #         )
 
+
 class Discriminator(nn.Module):
     def __init__(self, img_shape, use_perceptual=True):
         super().__init__()
@@ -177,13 +178,19 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             # Block 3
             nn.Conv3d(
-                in_channels=128, out_channels=256, kernel_size=(4,4,4), stride=(2,2,2)
+                in_channels=128,
+                out_channels=256,
+                kernel_size=(4, 4, 4),
+                stride=(2, 2, 2),
             ),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 4
             nn.Conv3d(
-                in_channels=256, out_channels=256, kernel_size=(4,4,4), stride=(2,2,2)
+                in_channels=256,
+                out_channels=256,
+                kernel_size=(4, 4, 4),
+                stride=(2, 2, 2),
             ),
             nn.BatchNorm3d(256),
             nn.LeakyReLU(0.2, inplace=True),
@@ -199,7 +206,7 @@ class Discriminator(nn.Module):
             # Sigmoid
             nn.Flatten(),
             nn.Linear(256 * 29 * 29 * 29, 1),
-            #nn.Linear(32, 1),
+            # nn.Linear(32, 1),
             nn.Sigmoid(),
         )
 
@@ -212,23 +219,31 @@ class Discriminator(nn.Module):
 class GAN(pl.LightningModule):
     # note: i don't think we need a latenet dim? -- isn't the t1w image just the latent space?
     def __init__(
-            self,
-            channels,
-            width,
-            height,
-            depth,
-            latent_dim: int = 100,
-            d_lr: float = 0.0005,
-            g_lr: float = 0.0005,
-            b1: float = 0.5,
-            b2: float = 0.999,
-            batch_size: int = 64,
-            example_data: torch.Tensor = None,
-            one_sided_label_value: int = 0.9,
-            **kwargs,
+        self,
+        channels,
+        width,
+        height,
+        depth,
+        latent_dim: int = 100,
+        d_lr: float = 0.0005,
+        g_lr: float = 0.0005,
+        b1: float = 0.5,
+        b2: float = 0.999,
+        batch_size: int = 64,
+        example_data: torch.Tensor = None,
+        one_sided_label_value: int = 0.9,
+        **kwargs,
     ):
         super().__init__()
-        self.save_hyperparameters("latent_dim", "g_lr", "d_lr", "b1", "b2", "batch_size", "one_sided_label_value")
+        self.save_hyperparameters(
+            "latent_dim",
+            "g_lr",
+            "d_lr",
+            "b1",
+            "b2",
+            "batch_size",
+            "one_sided_label_value",
+        )
 
         # networks
         data_shape = (channels, width, height, depth)
@@ -262,13 +277,38 @@ class GAN(pl.LightningModule):
             valid = valid.type_as(t1w_images)
 
             # adversarial loss is binary cross-entropy
-            g_adv_loss = self.adversarial_loss(self.discriminator(generated_imgs), valid)
-            self.log("g_adv_loss", g_adv_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            g_adv_loss = self.adversarial_loss(
+                self.discriminator(generated_imgs), valid
+            )
+            self.log(
+                "g_adv_loss",
+                g_adv_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
             g_recon_loss = self.reconstruction_loss(generated_imgs, t2w_images)
-            self.log("g_recon_loss", g_recon_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True,
-                     sync_dist=True)
+            self.log(
+                "g_recon_loss",
+                g_recon_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
             g_loss = g_adv_loss + g_recon_loss
-            self.log("g_loss", g_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log(
+                "g_loss",
+                g_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
 
             return g_loss
 
@@ -277,7 +317,9 @@ class GAN(pl.LightningModule):
             # Measure discriminator's ability to classify real from generated samples
 
             # how well can it label as real?
-            valid = torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
+            valid = (
+                torch.ones(t1w_images.shape[0], 1) * self.hparams.one_sided_label_value
+            )
             valid = valid.type_as(t1w_images)
 
             real_loss = self.adversarial_loss(self.discriminator(t2w_images), valid)
@@ -292,7 +334,15 @@ class GAN(pl.LightningModule):
 
             # discriminator loss is the average of these
             d_loss = (real_loss + fake_loss) / 2
-            self.log("d_loss", d_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.log(
+                "d_loss",
+                d_loss,
+                prog_bar=True,
+                logger=True,
+                on_step=True,
+                on_epoch=True,
+                sync_dist=True,
+            )
             return d_loss
 
     def configure_optimizers(self):
@@ -304,17 +354,33 @@ class GAN(pl.LightningModule):
         b2 = self.hparams.b2
 
         opt_g = torch.optim.Adam(self.generator.parameters(), lr=g_lr, betas=(b1, b2))
-        opt_d = torch.optim.Adam(self.discriminator.parameters(), lr=d_lr, betas=(b1, b2))
+        opt_d = torch.optim.Adam(
+            self.discriminator.parameters(), lr=d_lr, betas=(b1, b2)
+        )
         return [opt_g, opt_d], []
 
     def on_epoch_end(self):
-        input_data = self.example_input_array_test.type_as(self.discriminator.model_conv[0].weight)
+        input_data = self.example_input_array_test.type_as(
+            self.discriminator.model_conv[0].weight
+        )
         # log sampled images -- just logs from the last batch run
-        plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w_test')
+        plot_2d_or_3d_image(
+            self(input_data),
+            self.current_epoch,
+            self.logger.experiment,
+            tag="generated_t2w_test",
+        )
 
-        input_data = self.example_input_array_train.type_as(self.discriminator.model_conv[0].weight)
+        input_data = self.example_input_array_train.type_as(
+            self.discriminator.model_conv[0].weight
+        )
         # log sampled images -- just logs from the last batch run
-        plot_2d_or_3d_image(self(input_data), self.current_epoch, self.logger.experiment, tag='generated_t2w_train')
+        plot_2d_or_3d_image(
+            self(input_data),
+            self.current_epoch,
+            self.logger.experiment,
+            tag="generated_t2w_train",
+        )
 
 
 # TODO: this module is ready. It might need some changes if we will make changes to the data.
@@ -349,8 +415,8 @@ class HumanBrainDataModule(pl.LightningDataModule):
             for subject_id in structure_dict.keys():
                 for session_id in structure_dict[subject_id].keys():
                     if (
-                            len(structure_dict[subject_id][session_id]["t1w"]) > 0
-                            and len(structure_dict[subject_id][session_id]["t2w"]) > 0
+                        len(structure_dict[subject_id][session_id]["t1w"]) > 0
+                        and len(structure_dict[subject_id][session_id]["t2w"]) > 0
                     ):
                         # TODO: add structure here to filter by age, gender, site, scanner, T-value, etc..
                         [
@@ -358,9 +424,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
                                 {"t1w": t1_file, "t2w": t2_file}
                             )
                             for t1_file, t2_file in cartesian_product(
-                            structure_dict[subject_id][session_id]["t1w"],
-                            structure_dict[subject_id][session_id]["t2w"],
-                        )
+                                structure_dict[subject_id][session_id]["t1w"],
+                                structure_dict[subject_id][session_id]["t2w"],
+                            )
                         ]
 
             return output_list_of_dicts
@@ -373,9 +439,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-        #train_files = train_files[:20]
-        #val_files = val_files[:5]
-        #test_files = test_files[:1]
+        # train_files = train_files[:20]
+        # val_files = val_files[:5]
+        # test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -454,12 +520,12 @@ if __name__ == "__main__":
         mode="min",
     )
     generator_recon_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
-       dirpath=log_dir,
-       filename="gen_recon_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
-       save_top_k=1,
-       verbose=True,
-       monitor="g_recon_loss_step",
-       mode="min",
+        dirpath=log_dir,
+        filename="gen_recon_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
+        save_top_k=1,
+        verbose=True,
+        monitor="g_recon_loss_step",
+        mode="min",
     )
 
     discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
@@ -481,8 +547,12 @@ if __name__ == "__main__":
         gpus=[1],
         max_epochs=1000000,
         logger=tb_logger,
-        callbacks=[generator_checkpoint_callback, discriminator_checkpoint_callback, generator_recon_checkpoint_callback],
-        accelerator='dp'
+        callbacks=[
+            generator_checkpoint_callback,
+            discriminator_checkpoint_callback,
+            generator_recon_checkpoint_callback,
+        ],
+        accelerator="dp"
         # precision=16
         # amp_backend='apex',
         # amp_level='O3'
@@ -497,4 +567,3 @@ if __name__ == "__main__":
     trainer.fit(model)
 
     print("--- %s seconds ---" % (time.time() - start_time))
-

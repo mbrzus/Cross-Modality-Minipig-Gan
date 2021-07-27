@@ -104,8 +104,8 @@ class CasNetGenerator(nn.Module):
         def unet_block(
             in_channels,
             out_channels,
-            channels=(32, 64, 128, 256),# 512),#, 512),  # , 512),
-            strides=(2, 2, 2, 2),#, 2),  # , 2),
+            channels=(32, 64, 128, 256),  # 512),#, 512),  # , 512),
+            strides=(2, 2, 2, 2),  # , 2),  # , 2),
             # channels=(16, 32, 64, 128),
             # strides=(2, 2, 2),
         ):
@@ -165,11 +165,11 @@ class Discriminator(nn.Module):
             nn.BatchNorm3d(512),
             nn.LeakyReLU(0.2, inplace=True),
             # Block 5
-            #nn.Conv3d(
+            # nn.Conv3d(
             #    in_channels=512, out_channels=1024, kernel_size=kernel, stride=stride
-            #),
-            #nn.BatchNorm3d(1024),
-            #nn.LeakyReLU(0.2, inplace=True),
+            # ),
+            # nn.BatchNorm3d(1024),
+            # nn.LeakyReLU(0.2, inplace=True),
         )
 
         self.model_linear = nn.Sequential(
@@ -191,7 +191,7 @@ class Discriminator(nn.Module):
 
         for module in self.model_linear:
             x = module(x)
-            #if self.use_perceptual:
+            # if self.use_perceptual:
             #    perceptual_dict[index] = x.clone()
             #    index = index + 1
 
@@ -351,10 +351,10 @@ class GAN(pl.LightningModule):
             )
             _, disc_activations_real = self.discriminator(t2_ground_truth_batch)
             # minimize difference in the activations
-            #g_perceptual_loss = self.perceptual_loss(
+            # g_perceptual_loss = self.perceptual_loss(
             #    disc_activations_fake, disc_activations_real
-            #)
-            #self.log(
+            # )
+            # self.log(
             #    "g_perceptual_loss",
             #    g_perceptual_loss,
             #    prog_bar=True,
@@ -362,7 +362,7 @@ class GAN(pl.LightningModule):
             #    on_step=True,
             #    on_epoch=True,
             #    sync_dist=True,
-            #)
+            # )
 
             # adversarial loss is binary cross-entropy
             g_adv_loss = self.adversarial_loss(disc_output_fake, valid)
@@ -387,7 +387,7 @@ class GAN(pl.LightningModule):
                 on_epoch=True,
                 sync_dist=True,
             )
-            g_loss = g_adv_loss + g_recon_loss# + g_perceptual_loss
+            g_loss = g_adv_loss + g_recon_loss  # + g_perceptual_loss
             self.log(
                 "g_loss",
                 g_loss,
@@ -520,9 +520,9 @@ class HumanBrainDataModule(pl.LightningDataModule):
         # get just a very small portion of the data for initial test (fail fast)
         # TODO: look at splitting these for different training phases
 
-        #train_files = train_files[:20]
+        # train_files = train_files[:20]
         # val_files = val_files[:1]
-        #test_files = test_files[:1]
+        # test_files = test_files[:1]
 
         # transforms to prepare the data for pytorch monai training
         transforms = Compose(
@@ -559,10 +559,7 @@ class HumanBrainDataModule(pl.LightningDataModule):
         #     num_workers=2,
         # )
         self.test_dataset = CacheDataset(
-            data=test_files,
-            transform=transforms,
-            cache_num=1,
-            num_workers=1
+            data=test_files, transform=transforms, cache_num=1, num_workers=1
         )
 
     def train_dataloader(self):
@@ -607,23 +604,23 @@ if __name__ == "__main__":
         mode="min",
     )
 
-    #generator_recon_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+    # generator_recon_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
     #    dirpath=log_dir,
     #    filename="gen_recon_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{d_loss:.2f}",
     #    save_top_k=1,
     #    verbose=True,
     #    monitor="g_recon_loss_step",
     #    mode="min",
-    #)
+    # )
 
-    #generator_percep_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
+    # generator_percep_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
     #    dirpath=log_dir,
     #    filename="gen_percep_{epoch}-{g_loss:.2f}-{g_recon_loss:.2f}-{g_perceptual_loss:.2f}-{d_loss:.2f}",
     #    save_top_k=1,
     #    verbose=True,
     #    monitor="g_perceptual_loss_step",
     #    mode="min",
-    #)
+    # )
 
     discriminator_checkpoint_callback = pl.callbacks.model_checkpoint.ModelCheckpoint(
         dirpath=log_dir,
@@ -647,8 +644,8 @@ if __name__ == "__main__":
         callbacks=[
             generator_checkpoint_callback,
             discriminator_checkpoint_callback,
-           # generator_recon_checkpoint_callback,
-           # generator_percep_checkpoint_callback,
+            # generator_recon_checkpoint_callback,
+            # generator_percep_checkpoint_callback,
         ],
         accelerator="dp"
         # precision=16
